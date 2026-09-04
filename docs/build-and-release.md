@@ -21,15 +21,27 @@ npm --prefix apps/mobile install
 npm run mobile
 ```
 
-## Fastest way onto the iPhone: Expo Go
+## Pre-flight before every build
+
+Run this first — it catches config and dependency problems in seconds instead of 20 minutes into
+a cloud build:
 
 ```bash
-npm run mobile
+cd apps/mobile && npx expo-doctor
 ```
 
-Scan the QR code with the Camera app; Expo Go opens the project. No Apple account, no build.
-This works until the app needs a native module Expo Go doesn't bundle — expected around Phase 1
-pairing (QR scanning / camera).
+It must report all checks passing. It previously caught a missing `expo-constants` peer
+dependency, which crashes standalone builds (Expo Go bundles it, so a device build is the first
+place you would see it).
+
+Icons are generated from code, not hand-edited:
+
+```bash
+powershell -NoProfile -File apps/mobile/scripts/generate-icons.ps1
+```
+
+`icon.png` is written as 24-bit RGB with **no alpha channel** on purpose — Apple rejects App
+Store icons that carry one.
 
 ## TestFlight (requires the Apple Developer Program)
 
