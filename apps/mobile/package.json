@@ -14,8 +14,8 @@
     "preset": "jest-expo"
   },
   "dependencies": {
-    "@axune/protocol": "*",
-    "@axune/shared": "*",
+    "@axune/protocol": "file:../../packages/protocol",
+    "@axune/shared": "file:../../packages/shared",
     "@expo/vector-icons": "~14.0.4",
     "@react-navigation/native": "^7.0.14",
     "expo": "~52.0.49",

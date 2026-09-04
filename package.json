@@ -2,13 +2,15 @@
   "name": "axune",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "comments": {
+    "install": "apps/mobile installs its own dependency tree on purpose. npm workspace hoisting splits Expo's tree (expo-router nested, babel-preset-expo hoisted) and breaks bundling. Shared packages are linked with file: dependencies instead."
+  },
   "scripts": {
-    "mobile": "npm run start --workspace @axune/mobile",
-    "mobile:web": "npm run web --workspace @axune/mobile",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "mobile": "npm --prefix apps/mobile run start",
+    "mobile:web": "npm --prefix apps/mobile run web",
+    "typecheck": "npm --prefix apps/mobile run typecheck && tsc -p packages/shared && tsc -p packages/protocol"
+  },
+  "devDependencies": {
+    "typescript": "~5.3.3"
   }
 }

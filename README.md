@@ -32,7 +32,7 @@ docs/
 npm run mobile
 ```
 
-Then open it with Expo Go on the iPhone, or press `w` for the browser. Web is only used as a
+Then scan the QR code with Expo Go on the iPhone, or press `w` for the browser. Web is only a
 quick visual check — the app targets iPhone.
 
 Typecheck everything:
@@ -40,6 +40,10 @@ Typecheck everything:
 ```bash
 npm run typecheck
 ```
+
+`apps/mobile` deliberately keeps its own `node_modules` (npm workspace hoisting breaks Expo's
+bundler) — see [docs/build-and-release.md](docs/build-and-release.md), which also covers the
+TestFlight path.
 
 ## Status
 

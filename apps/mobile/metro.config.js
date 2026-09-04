@@ -1,15 +1,14 @@
-// Monorepo-aware Metro config: watch the workspace root so packages/* resolve.
+// The mobile app keeps its own node_modules (see the root package.json note), but the
+// @axune/* packages are file: links to ../../packages, so Metro must watch that folder to
+// transform their TypeScript sources.
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
 const projectRoot = __dirname;
-const workspaceRoot = path.resolve(projectRoot, '../..');
+const packagesRoot = path.resolve(projectRoot, '../../packages');
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [workspaceRoot];
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(workspaceRoot, 'node_modules'),
-];
+config.watchFolders = [packagesRoot];
+
 module.exports = config;

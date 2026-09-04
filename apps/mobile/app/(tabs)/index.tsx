@@ -53,9 +53,7 @@ export default function HomeScreen() {
           {SUGGESTED_PROMPTS.slice(0, 4).map((prompt) => (
             <Pressable key={prompt.id} style={styles.chip} onPress={() => openPrompt(prompt.text)}>
               <Text style={styles.chipIcon}>{prompt.glyph}</Text>
-              <Text style={styles.chipLabel} numberOfLines={1}>
-                {prompt.label}
-              </Text>
+              <Text style={styles.chipLabel}>{prompt.label}</Text>
             </Pressable>
           ))}
           <Pressable
