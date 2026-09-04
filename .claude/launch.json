@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "axune-mobile-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "mobile:web"],
+      "port": 8081
+    }
+  ]
+}
