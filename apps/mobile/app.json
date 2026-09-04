@@ -15,10 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.axune.mobile"
+      "bundleIdentifier": "com.cedricyeoh.axune"
     },
     "android": {
-      "package": "com.axune.mobile",
+      "package": "com.cedricyeoh.axune",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#11161d"

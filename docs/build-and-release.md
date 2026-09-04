@@ -83,7 +83,40 @@ the `testflight.apple.com/join/…` URL to share.
 
 ### First-build checklist
 
-- Bundle identifier is `com.axune.mobile` (set in `app.json`); it must match the App Store
+- Bundle identifier is `com.cedricyeoh.axune` (set in `app.json`); it must match the App Store
   Connect app record.
 - `eas.json` uses `appVersionSource: "remote"`, so EAS owns the build number — no manual bumping.
 - Version `0.1.0` is in `app.json`. Bump it for user-visible releases.
+
+## Lessons carried over from the Mediway App build
+
+Mediway shipped to TestFlight on 2026-08-31 from this same machine and Apple account. Its
+session log records three failures worth not repeating:
+
+1. **Bundle identifiers are globally unique across all of Apple**, not per account. Mediway's
+   first build failed because `com.mediway.app` belonged to someone else. Axune therefore uses
+   the personal namespace `com.cedricyeoh.axune`. Identifiers transfer with an app later, so
+   this locks nothing in.
+2. **`eas submit --non-interactive` fails without `ascAppId` in `eas.json`.** The binary is fine
+   when this happens — resubmit without rebuilding. Once App Store Connect has the Axune app
+   record, put its `ascAppId` in the `submit.production.ios` block so submissions run unattended.
+3. **Apple enrolment** once returned a bare *"Sorry, you can't enroll at this time"*, which
+   routes to `/enroll/ineligible/age-category` — the cause was the date of birth on the Apple ID,
+   not payment. Enrolment is now active, so this should not recur.
+
+Signing credentials from the Mediway build are stored against the same Expo account, so Axune's
+first build will likely reuse the existing Distribution Certificate rather than asking for a
+fresh Apple login.
+
+### Worth adding once TestFlight works: over-the-air updates
+
+Axune is almost entirely JavaScript, so `expo-updates` would let changes ship with
+`eas update` and no rebuild — Mediway's biggest single workflow win. Two traps it hit:
+
+- Installing `expo-updates` and adding channels is **not** enough. The update URL is baked into
+  the binary, so if it is missing from the resolved config the build can never receive an update.
+- Keep `runtimeVersion` on the `appVersion` policy, not pinned to a literal. A pinned value lets
+  an update reach a binary too old to run it, and it fails silently.
+
+This is deliberately not set up yet — `eas.json` carries no `channel` fields, because they
+require `expo-updates` and would fail the build without it.
