@@ -18,10 +18,18 @@
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "ios": {
+        "image": "latest"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6809007456",
+        "appleTeamId": "7WJ8MGWKDG"
+      }
+    }
   }
 }
