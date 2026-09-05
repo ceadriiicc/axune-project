@@ -21,6 +21,26 @@ npm --prefix apps/mobile install
 npm run mobile
 ```
 
+## Verify the bundle, not just the typecheck
+
+This has now cost time twice, in two different ways, and it is the single most useful habit here:
+
+**A green `tsc` is not a build, and neither is a green `expo-doctor`.**
+
+- Day one: TypeScript passed cleanly the entire time the app could not bundle at all (npm
+  workspace hoisting).
+- The SDK 57 upgrade: `tsc` clean *and* `expo-doctor` 21/21, while the bundle failed outright —
+  expo-router 56+ no longer works alongside `react-navigation`.
+
+So before spending a cloud build, start the dev server and actually fetch the iOS bundle:
+
+```bash
+curl "http://localhost:8081/node_modules/expo-router/entry.bundle?platform=ios&dev=true" -o /dev/null -w "%{http_code}\n"
+```
+
+`200` means it bundles. `500` returns the real error as JSON. Check **iOS**, not just web — they
+fail independently, and iOS is the platform that ships.
+
 ## Pre-flight before every build
 
 Run this first — it catches config and dependency problems in seconds instead of 20 minutes into
@@ -87,6 +107,34 @@ the `testflight.apple.com/join/…` URL to share.
   Connect app record.
 - `eas.json` uses `appVersionSource: "remote"`, so EAS owns the build number — no manual bumping.
 - Version `0.1.0` is in `app.json`. Bump it for user-visible releases.
+
+## Why the SDK version is not optional (2026-09-06)
+
+The first TestFlight attempt took three builds. Apple and React Native squeezed SDK 52 from both
+sides:
+
+- **Build 1** compiled fine and produced a valid IPA, but Apple **rejected the upload**: SDK 52's
+  default builder image ships an Xcode older than App Store Connect accepts.
+- **Build 2**, with `"image": "latest"`, failed to compile — React Native 0.76's bundled `fmt`
+  library does not build under modern clang (`call to consteval function ... is not a constant
+  expression`).
+- No builder image satisfies both. The version had to move.
+- **Build 3** — Expo SDK 57, React 19.2.3, RN 0.86.3 — compiled and submitted.
+
+**Keep the SDK current enough to build on a recent Xcode.** Apple raises its minimum roughly
+annually, and an SDK that predates it strands the project entirely. Mirroring what the Mediway
+App ships is a reliable target, since it is proven against this same Apple account.
+
+Three things the upgrade surfaced, all worth knowing before the next one:
+
+- **`react-test-renderer` pinned to React 18** blocked the whole install with `ERESOLVE`, leaving
+  `node_modules` empty and producing a very misleading "failed to resolve plugin for module
+  expo-router" error. The Jest setup was unused, so it was removed rather than forced through
+  with `--legacy-peer-deps`, which npm itself warns produces a broken tree.
+- **SDK 57 config schema**: `newArchEnabled` is gone (the new architecture is always on) and
+  `splash` moved into the `expo-splash-screen` plugin.
+- **expo-router 56+ cannot coexist with `react-navigation`.** Theming moved onto the navigator
+  via `screenOptions.contentStyle`, which also stops pushes flashing white.
 
 ## Lessons carried over from the Mediway App build
 
