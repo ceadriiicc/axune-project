@@ -121,7 +121,9 @@ export default function WorkspaceScreen() {
               </Text>
               <Text style={styles.emptyBody}>
                 {connected
-                  ? 'Claude Code reads the repository on your machine and answers here. It cannot change anything yet.'
+                  ? canWrite
+                    ? 'Claude Code reads the repository on your machine and answers here. Turn on editing below and changes land on a branch you review.'
+                    : 'Claude Code reads the repository on your machine and answers here.'
                   : 'Scan the code shown by Axune Desktop to connect this phone.'}
               </Text>
 
@@ -175,10 +177,11 @@ export default function WorkspaceScreen() {
           )}
         </ScrollView>
 
-        {canWrite ? (
+        {capability === 'read-write' ? (
           <Pressable
-            style={[styles.modeRow, writeMode && styles.modeRowOn]}
-            onPress={() => setWriteMode((on) => !on)}
+            style={[styles.modeRow, writeMode && styles.modeRowOn, !connected && styles.modeRowOff]}
+            onPress={() => connected && setWriteMode((on) => !on)}
+            disabled={!connected}
           >
             <Ionicons
               name={writeMode ? 'create' : 'eye-outline'}
@@ -186,9 +189,11 @@ export default function WorkspaceScreen() {
               color={writeMode ? color.claudeText : color.textSoft}
             />
             <Text style={[styles.modeText, writeMode && styles.modeTextOn]}>
-              {writeMode
-                ? 'Editing — changes land on a branch you review'
-                : 'Read-only — tap to let this prompt edit files'}
+              {!connected
+                ? 'Editing available once connected'
+                : writeMode
+                  ? 'Editing — changes land on a branch you review'
+                  : 'Read-only — tap to let this prompt edit files'}
             </Text>
           </Pressable>
         ) : null}
@@ -402,6 +407,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.line,
   },
+  modeRowOff: { opacity: 0.45 },
   modeRowOn: {
     borderColor: 'rgba(216,173,123,0.4)',
     backgroundColor: 'rgba(216,173,123,0.08)',
