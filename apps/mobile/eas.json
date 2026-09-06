@@ -30,6 +30,12 @@
         "ascAppId": "6809007456",
         "appleTeamId": "7WJ8MGWKDG"
       }
+    },
+    "development": {
+      "ios": {
+        "ascAppId": "6809007456",
+        "appleTeamId": "7WJ8MGWKDG"
+      }
     }
   }
 }
