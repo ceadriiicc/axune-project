@@ -330,6 +330,7 @@ export class AxuneServer {
       const files = await this.worktrees.changes(worktree);
       const patch = await this.worktrees.diff(worktree);
       const commit = await this.worktrees.commit(worktree, `Axune: ${truncate(prompt, 60)}`);
+      const behindBy = await this.worktrees.behindBy(worktree);
 
       this.broadcast({
         type: 'changes',
@@ -341,6 +342,7 @@ export class AxuneServer {
           insertions: files.reduce((sum, file) => sum + file.insertions, 0),
           deletions: files.reduce((sum, file) => sum + file.deletions, 0),
           patch,
+          behindBy,
         },
       });
 

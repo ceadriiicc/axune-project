@@ -177,6 +177,14 @@ export interface ChangeSet {
   deletions: number;
   /** Unified diff, truncated for a phone. */
   patch: string;
+  /**
+   * Commits the base branch gained while the agent was working.
+   *
+   * The agent branched from a snapshot. If the user committed at their desk
+   * meanwhile, this work is built on older code — harmless while every change
+   * is reviewed, but the reviewer should know.
+   */
+  behindBy: number;
 }
 
 export interface ChangedFile {

@@ -118,6 +118,15 @@ export class WorktreeManager {
     await this.git(['branch', '-D', worktree.branch]).catch(() => undefined);
   }
 
+  /**
+   * How far the branch's base has fallen behind since the agent started.
+   * Zero means the work is still built on current code.
+   */
+  async behindBy(worktree: Worktree): Promise<number> {
+    const output = await this.git(['rev-list', '--count', `${worktree.base}..HEAD`]).catch(() => '0');
+    return Number(output) || 0;
+  }
+
   async list(): Promise<string[]> {
     const output = await this.git(['branch', '--list', 'axune/*', '--format=%(refname:short)']);
     return output.split('\n').filter((line) => line.trim());

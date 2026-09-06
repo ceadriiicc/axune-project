@@ -4,7 +4,14 @@ import { promisify } from 'node:util';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@axune/protocol';
 
-import { checkCommand, checkPath, MAX_TURNS } from './safety';
+import {
+  checkCommand,
+  checkPath,
+  checkTool,
+  INJECTION_NOTICE,
+  MAX_TURNS,
+  redactSecrets,
+} from './safety';
 import type {
   AgentAdapter,
   DetectionResult,
@@ -16,7 +23,7 @@ import type {
 const execFileAsync = promisify(execFile);
 
 /** Tools that only read. Everything else is a write or a command in Phase 1 terms. */
-const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite']);
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'TodoWrite']);
 
 /**
  * Hard deny list for read-only runs.
@@ -120,7 +127,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             systemPrompt: {
               type: 'preset',
               preset: 'claude_code',
-              append: PHONE_CONTEXT_PROMPT,
+              append: `${PHONE_CONTEXT_PROMPT}
+
+${INJECTION_NOTICE}`,
             },
             // Leave permissions in a prompting mode on purpose. `canUseTool`
             // fires ONLY when the permission flow falls through to a prompt —
@@ -148,7 +157,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             // Its signature is (toolName, input, options) — three positional
             // arguments, not one request object.
             canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
-              const input = safeStringify(toolInput);
+              // Redacted before it goes anywhere: tool inputs are streamed to
+              // the phone and written to the activity log, so an unredacted
+              // credential here becomes a credential in two more places.
+              const input = redactSecrets(safeStringify(toolInput));
               const mode = request.readOnly ? ('read' as const) : ('write' as const);
 
               const deny = (reason: string) => {
@@ -160,6 +172,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
                 });
                 return { behavior: 'deny' as const, message: reason };
               };
+
+              const toolCheck = checkTool(toolName);
+              if (!toolCheck.allowed) return deny(toolCheck.reason!);
 
               // Confine every file operation to the directory this run owns.
               // Worktree isolation decides where the agent starts; this decides
