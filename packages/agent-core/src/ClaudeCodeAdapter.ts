@@ -17,6 +17,18 @@ const execFileAsync = promisify(execFile);
 /** Tools that only read. Everything else is a write or a command in Phase 1 terms. */
 const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite']);
 
+/**
+ * Hard deny list for read-only runs.
+ *
+ * This exists because `canUseTool` is NOT sufficient on its own: it fires only
+ * when the permission flow falls through to a prompt, and the SDK auto-approves
+ * what it considers safe before the gate is ever consulted. A first live run
+ * confirmed it — `Bash` and two `Read`s executed without the gate seeing any of
+ * them. So mutation is blocked at the tool level, and the gate is the second
+ * layer rather than the only one.
+ */
+const MUTATING_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
+
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly agentId = 'claude-code' as const;
 
@@ -55,7 +67,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     let seq = 0;
     let providerSessionId: string | null = null;
 
-    const emit = (body: Omit<AgentEvent, keyof EnvelopeFields>) => {
+    const emit = (body: AgentEventBody) => {
       onEvent({
         seq: seq++,
         runId: request.runId,
@@ -90,34 +102,46 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             // look like it works while approving nothing.
             permissionMode: 'default',
             allowedTools: [],
+            ...(request.readOnly ? { disallowedTools: MUTATING_TOOLS } : {}),
             // Load the target repository's own CLAUDE.md and settings, since the
             // agent is meant to work the way that project expects.
             settingSources: ['project'],
             ...(request.resumeSessionId ? { resume: request.resumeSessionId } : {}),
-            canUseTool: async (toolRequest) => {
-              const toolName = toolRequest?.toolName ?? 'unknown';
-              const input = safeStringify(toolRequest?.toolInput);
+            // Real signature is (toolName, input, options) — three positional
+            // arguments, not one request object. Published examples showing a
+            // single `{toolName, toolInput, toolUseId}` argument are wrong, and
+            // the mismatch silently produced undefined tool ids.
+            canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
+              const input = safeStringify(toolInput);
 
+              // The SDK expects exactly {behavior:'allow'|'deny'}. Returning
+              // {approved:boolean} is treated as a malformed response and the
+              // tool call fails with an error rather than a decision — which is
+              // how this bug first showed up.
               if (request.readOnly && !READ_ONLY_TOOLS.has(toolName)) {
                 emit({
                   type: 'tool_finished',
-                  toolCallId: toolRequest?.toolUseId ?? toolName,
+                  toolCallId: toolName,
                   ok: false,
                   output: `Denied: ${toolName} would modify state, and this run is read-only.`,
                 });
                 return {
-                  approved: false,
-                  reason: 'This Axune run is read-only. Inspect and report instead of changing anything.',
+                  behavior: 'deny' as const,
+                  message:
+                    'This Axune run is read-only. Inspect and report instead of changing anything.',
                 };
               }
 
               emit({
                 type: 'tool_started',
-                toolCallId: toolRequest?.toolUseId ?? toolName,
+                toolCallId: toolName,
                 toolName,
                 input,
               });
-              return { approved: true };
+              return {
+                behavior: 'allow' as const,
+                updatedInput: toolInput,
+              };
             },
           },
         });
@@ -158,7 +182,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 }
 
-type EnvelopeFields = { seq: number; runId: string; sessionId: string; agentId: unknown; ts: number };
+/**
+ * `Omit` does not distribute over a union — applying it directly to AgentEvent
+ * collapses the union to its common keys and every event body stops
+ * typechecking. This distributes first, so each variant keeps its own fields.
+ */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+type AgentEventBody = DistributiveOmit<AgentEvent, 'seq' | 'runId' | 'sessionId' | 'agentId' | 'ts'>;
 
 /**
  * The SDK's message shapes are normalised defensively rather than assumed.
@@ -172,9 +203,9 @@ function pickSessionId(message: UnknownMessage): string | null {
   return typeof id === 'string' ? id : null;
 }
 
-function translate(message: UnknownMessage): Array<Omit<AgentEvent, keyof EnvelopeFields>> {
+function translate(message: UnknownMessage): AgentEventBody[] {
   const type = message['type'];
-  const events: Array<Omit<AgentEvent, keyof EnvelopeFields>> = [];
+  const events: AgentEventBody[] = [];
 
   if (type === 'assistant') {
     for (const block of contentBlocks(message)) {
