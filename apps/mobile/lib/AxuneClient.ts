@@ -1,6 +1,7 @@
 import type {
   ActivityEvent,
   AgentEvent,
+  ChangeSet,
   AgentStatus,
   Capability,
   ClientMessage,
@@ -30,6 +31,7 @@ export interface ClientCallbacks {
   onMachine?: (machine: MachineSummary, capability: Capability) => void;
   onActivity?: (events: ActivityEvent[], sinceLastVisit: number) => void;
   onActivityEvent?: (event: ActivityEvent) => void;
+  onChanges?: (runId: string, result: ChangeSet) => void;
 }
 
 export class AxuneClient {
@@ -101,7 +103,7 @@ export class AxuneClient {
     });
   }
 
-  startRun(runId: string, sessionId: string, prompt: string): void {
+  startRun(runId: string, sessionId: string, prompt: string, write = false): void {
     this.activeRunId = runId;
     this.lastSeq.set(runId, -1);
     this.send({
@@ -111,7 +113,13 @@ export class AxuneClient {
       prompt,
       agentIds: ['claude-code'],
       mode: 'independent',
+      write,
     });
+  }
+
+  /** Keep the branch an agent produced, or throw it away. */
+  resolveChanges(runId: string, decision: 'keep' | 'discard'): void {
+    this.send({ type: 'resolve_changes', runId, decision });
   }
 
   stopRun(runId: string): void {
@@ -192,6 +200,10 @@ export class AxuneClient {
 
       case 'project_changed':
         this.callbacks.onProject?.(message.project);
+        return;
+
+      case 'changes':
+        this.callbacks.onChanges?.(message.runId, message.result);
         return;
 
       case 'activity':

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import { AgentText } from '@/components/ui/AgentText';
+import { ChangeReview } from '@/components/ui/ChangeReview';
 import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { AGENTS } from '@/constants/agents';
 import { color, radius, spacing } from '@/constants/theme';
@@ -45,14 +46,23 @@ export default function WorkspaceScreen() {
     threads,
     openThread,
     live,
+    capability,
     sendPrompt,
+    resolveChanges,
     newConversation,
     stopRun,
   } = useWorkspace();
 
   const [draft, setDraft] = useState('');
+  /**
+   * Editing is opt-in per prompt rather than a mode you can forget you are in.
+   * Asking a question and accidentally authorising file changes should not be
+   * possible, so this resets after every send.
+   */
+  const [writeMode, setWriteMode] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const connected = connectionState === 'connected' || connectionState === 'reconnecting';
+  const canWrite = connected && capability === 'read-write';
 
   // Follow the stream as it arrives, the way a terminal would.
   const lastText = conversation[conversation.length - 1]?.text.length ?? 0;
@@ -65,8 +75,9 @@ export default function WorkspaceScreen() {
     const text = prompt.trim();
     if (!text) return;
     if (!connected) return router.push('/pair');
-    sendPrompt(text);
+    sendPrompt(text, writeMode);
     setDraft('');
+    setWriteMode(false);
   };
 
   return (
@@ -153,9 +164,34 @@ export default function WorkspaceScreen() {
               )}
             </View>
           ) : (
-            conversation.map((run) => <Turn key={run.runId} run={run} onStop={stopRun} />)
+            conversation.map((run) => (
+              <Turn
+                key={run.runId}
+                run={run}
+                onStop={stopRun}
+                onDecide={(decision) => resolveChanges(run.runId, decision)}
+              />
+            ))
           )}
         </ScrollView>
+
+        {canWrite ? (
+          <Pressable
+            style={[styles.modeRow, writeMode && styles.modeRowOn]}
+            onPress={() => setWriteMode((on) => !on)}
+          >
+            <Ionicons
+              name={writeMode ? 'create' : 'eye-outline'}
+              size={14}
+              color={writeMode ? color.claudeText : color.textSoft}
+            />
+            <Text style={[styles.modeText, writeMode && styles.modeTextOn]}>
+              {writeMode
+                ? 'Editing — changes land on a branch you review'
+                : 'Read-only — tap to let this prompt edit files'}
+            </Text>
+          </Pressable>
+        ) : null}
 
         <View style={styles.composer}>
           <TextInput
@@ -185,16 +221,36 @@ export default function WorkspaceScreen() {
  * The panels sit in a row so a second agent needs no layout change — with two,
  * each takes half the width and the comparison is side by side.
  */
-function Turn({ run, onStop }: { run: LiveRun; onStop: () => void }) {
+function Turn({
+  run,
+  onStop,
+  onDecide,
+}: {
+  run: LiveRun;
+  onStop: () => void;
+  onDecide: (decision: 'keep' | 'discard') => void;
+}) {
   return (
     <View style={styles.turn}>
-      <View style={styles.promptBubble}>
-        <Text style={styles.promptText}>{run.prompt}</Text>
+      <View style={styles.promptRow}>
+        {run.write ? (
+          <View style={styles.writeBadge}>
+            <Ionicons name="create-outline" size={11} color={color.claudeText} />
+            <Text style={styles.writeBadgeText}>edit</Text>
+          </View>
+        ) : null}
+        <View style={styles.promptBubble}>
+          <Text style={styles.promptText}>{run.prompt}</Text>
+        </View>
       </View>
 
       <View style={styles.panels}>
         <AgentPanel run={run} onStop={onStop} />
       </View>
+
+      {run.changes ? (
+        <ChangeReview changes={run.changes} decision={run.decision} onDecide={onDecide} />
+      ) : null}
     </View>
   );
 }
@@ -322,6 +378,36 @@ const styles = StyleSheet.create({
   pairText: { color: '#1e1b18', fontSize: 14, fontWeight: '700' },
 
   turn: { gap: spacing.sm },
+  promptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  writeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(216,173,123,0.35)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  writeBadgeText: { color: color.claudeText, fontSize: 10, fontWeight: '600' },
+  modeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginHorizontal: spacing.lg,
+    marginBottom: 6,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: color.line,
+  },
+  modeRowOn: {
+    borderColor: 'rgba(216,173,123,0.4)',
+    backgroundColor: 'rgba(216,173,123,0.08)',
+  },
+  modeText: { color: color.textSoft, fontSize: 11.5, flex: 1 },
+  modeTextOn: { color: color.claudeText },
   promptBubble: {
     alignSelf: 'flex-end',
     maxWidth: '88%',

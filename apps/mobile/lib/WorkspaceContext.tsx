@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   AgentEvent,
   AgentStatus,
+  ChangeSet,
   Capability,
   MachineSummary,
   PairingPayload,
@@ -44,6 +45,12 @@ export interface LiveRun {
   /** For elapsed time, and for spotting a run that has gone quiet. */
   startedAt: number | null;
   lastEventAt: number | null;
+  /** True when this run was allowed to edit files. */
+  write: boolean;
+  /** What it produced, once finished. Null while running or for read runs. */
+  changes: ChangeSet | null;
+  /** Set once the user has kept or discarded the branch. */
+  decision: 'keep' | 'discard' | null;
 }
 
 export interface ActivityLine {
@@ -107,7 +114,8 @@ interface WorkspaceState {
   newSinceLastVisit: number;
   markChecked: () => void;
 
-  sendPrompt: (prompt: string) => void;
+  sendPrompt: (prompt: string, write?: boolean) => void;
+  resolveChanges: (runId: string, decision: 'keep' | 'discard') => void;
   newConversation: () => void;
   pair: (payload: PairingPayload) => void;
   disconnect: () => void;
@@ -128,6 +136,9 @@ const emptyRun = (runId: string, prompt: string): LiveRun => ({
   outcome: null,
   startedAt: Date.now(),
   lastEventAt: Date.now(),
+  write: false,
+  changes: null,
+  decision: null,
 });
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
@@ -214,6 +225,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setActivity((past) => [...past.slice(-80), event]);
         setNewSinceLastVisit((count) => count + 1);
       },
+      onChanges: (runId, result) =>
+        setConversation((current) =>
+          current.map((run) => (run.runId === runId ? { ...run, changes: result } : run)),
+        ),
       onGap: (_runId, missed) => setConnectionDetail(`caught up — replayed ${missed} events`),
     });
     return clientRef.current;
@@ -302,15 +317,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (live) clientRef.current?.stopRun(live.runId);
   }, [live]);
 
-  const sendPrompt = useCallback((prompt: string) => {
+  const sendPrompt = useCallback((prompt: string, write = false) => {
     const client = clientRef.current;
     if (!client?.isConnected) return;
 
     const runId = randomId();
     // Show the prompt immediately rather than waiting for run_started to come
     // back over the wire — a phone should never look like it dropped a tap.
-    setConversation((current) => [...current, emptyRun(runId, prompt)]);
-    client.startRun(runId, conversationIdRef.current, prompt);
+    setConversation((current) => [...current, { ...emptyRun(runId, prompt), write }]);
+    client.startRun(runId, conversationIdRef.current, prompt, write);
+  }, []);
+
+  /**
+   * Keep the branch or throw it away. Applied optimistically so the buttons
+   * respond immediately; the desktop is the one that actually deletes.
+   */
+  const resolveChanges = useCallback((runId: string, decision: 'keep' | 'discard') => {
+    clientRef.current?.resolveChanges(runId, decision);
+    setConversation((current) =>
+      current.map((run) => (run.runId === runId ? { ...run, decision } : run)),
+    );
   }, []);
 
   // Reconnect silently on launch if this device has paired before. Failure is
@@ -347,6 +373,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       newSinceLastVisit,
       markChecked,
       sendPrompt,
+      resolveChanges,
       newConversation,
       pair,
       disconnect,
@@ -369,6 +396,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       newSinceLastVisit,
       markChecked,
       sendPrompt,
+      resolveChanges,
       newConversation,
       pair,
       disconnect,
