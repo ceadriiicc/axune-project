@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@axune/protocol';
 
-import { isReadOnlyShellCommand } from './readOnlyShell';
+import { checkCommand, checkPath, MAX_TURNS } from './safety';
 import type {
   AgentAdapter,
   DetectionResult,
@@ -130,6 +130,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             permissionMode: 'default',
             allowedTools: [],
             ...(request.readOnly ? { disallowedTools: MUTATING_TOOLS } : {}),
+            // A confused agent can loop a long time, and every turn spends the
+            // user's own subscription allowance.
+            maxTurns: MAX_TURNS,
             // Load the target repository's own CLAUDE.md and settings, since the
             // agent is meant to work the way that project expects.
             settingSources: ['project'],
@@ -138,44 +141,44 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             // arguments, not one request object. Published examples showing a
             // single `{toolName, toolInput, toolUseId}` argument are wrong, and
             // the mismatch silently produced undefined tool ids.
+            // The SDK expects exactly {behavior:'allow'|'deny'}. Returning
+            // {approved:boolean} is treated as malformed and the tool call
+            // fails with an error rather than a decision.
+            //
+            // Its signature is (toolName, input, options) — three positional
+            // arguments, not one request object.
             canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
               const input = safeStringify(toolInput);
+              const mode = request.readOnly ? ('read' as const) : ('write' as const);
 
-              // The SDK expects exactly {behavior:'allow'|'deny'}. Returning
-              // {approved:boolean} is treated as a malformed response and the
-              // tool call fails with an error rather than a decision — which is
-              // how this bug first showed up.
-              // Bash is judged by what it would run, not by its name. Denying
-              // the whole tool costs the agent `ls` and `git log`, and it
-              // compensates by hammering Glob and Read to reconstruct the same
-              // information — slow, noisy, and worse for the reader.
-              const readOnlyBash =
-                toolName === 'Bash' && isReadOnlyShellCommand(toolInput?.['command']);
-
-              if (request.readOnly && !READ_ONLY_TOOLS.has(toolName) && !readOnlyBash) {
+              const deny = (reason: string) => {
                 emit({
                   type: 'tool_finished',
                   toolCallId: toolName,
                   ok: false,
-                  output: `Denied: ${toolName} would modify state, and this run is read-only.`,
+                  output: `Denied: ${reason}`,
                 });
-                return {
-                  behavior: 'deny' as const,
-                  message:
-                    'This Axune run is read-only. Inspect and report instead of changing anything.',
-                };
+                return { behavior: 'deny' as const, message: reason };
+              };
+
+              // Confine every file operation to the directory this run owns.
+              // Worktree isolation decides where the agent starts; this decides
+              // where it can reach, and without it an absolute path defeats the
+              // isolation entirely.
+              const pathCheck = checkPath(request.cwd, toolInput ?? {});
+              if (!pathCheck.allowed) return deny(pathCheck.reason!);
+
+              if (toolName === 'Bash') {
+                const verdict = checkCommand(toolInput?.['command'], mode);
+                if (!verdict.allowed) return deny(verdict.reason!);
+              } else if (request.readOnly && !READ_ONLY_TOOLS.has(toolName)) {
+                return deny(
+                  'This Axune run is read-only. Inspect and report instead of changing anything.',
+                );
               }
 
-              emit({
-                type: 'tool_started',
-                toolCallId: toolName,
-                toolName,
-                input,
-              });
-              return {
-                behavior: 'allow' as const,
-                updatedInput: toolInput,
-              };
+              emit({ type: 'tool_started', toolCallId: toolName, toolName, input });
+              return { behavior: 'allow' as const, updatedInput: toolInput };
             },
           },
         });
