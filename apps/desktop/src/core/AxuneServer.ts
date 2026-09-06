@@ -28,6 +28,9 @@ export class AxuneServer {
   private readonly running = new Map<string, RunningRun>();
   /** Sockets that have completed pairing, with their session token. */
   private readonly authed = new WeakMap<WebSocket, string>();
+  /** Observers for the local UI — the terminal now, the Electron window later. */
+  private readonly eventListeners = new Set<(event: AgentEvent) => void>();
+  private readonly connectionListeners = new Set<(state: string) => void>();
 
   constructor(
     readonly pairing: PairingManager,
@@ -56,6 +59,20 @@ export class AxuneServer {
     this.wss = null;
   }
 
+  /** Watch agent events locally. The desktop shows the same run the phone does. */
+  onEvent(listener: (event: AgentEvent) => void): void {
+    this.eventListeners.add(listener);
+  }
+
+  /** Watch pairing and connection changes, for the desktop's own status display. */
+  onConnectionChange(listener: (state: string) => void): void {
+    this.connectionListeners.add(listener);
+  }
+
+  private announce(state: string): void {
+    for (const listener of this.connectionListeners) listener(state);
+  }
+
   setProject(project: ProjectSummary): void {
     this.project = project;
     this.broadcast({ type: 'project_changed', project });
@@ -74,6 +91,9 @@ export class AxuneServer {
   }
 
   private onConnection(socket: WebSocket): void {
+    socket.on('close', () => {
+      if (this.authed.has(socket)) this.announce('device disconnected');
+    });
     socket.on('message', (raw) => {
       let message: ClientMessage;
       try {
@@ -92,6 +112,7 @@ export class AxuneServer {
         return this.send(socket, { type: 'pair_rejected', reason: result.reason, detail: result.detail });
       }
       this.authed.set(socket, result.sessionToken);
+      this.announce(`${message.deviceName} paired`);
       return this.send(socket, {
         type: 'paired',
         sessionToken: result.sessionToken,
@@ -111,6 +132,7 @@ export class AxuneServer {
         });
       }
       this.authed.set(socket, message.token);
+      this.announce(`device reconnected, replaying run ${message.runId.slice(0, 8)}`);
 
       const slice = this.registry.since(message.runId, message.lastSeq);
       this.send(socket, {
@@ -159,6 +181,7 @@ export class AxuneServer {
       (event: AgentEvent) => {
         this.registry.record(event);
         this.broadcast({ type: 'event', event });
+        for (const listener of this.eventListeners) listener(event);
       },
     );
 

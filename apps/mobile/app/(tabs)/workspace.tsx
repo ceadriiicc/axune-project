@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { AgentPanel } from '@/components/ui/AgentPanel';
+import { LiveRunPanel } from '@/components/ui/LiveRunPanel';
 import { Composer } from '@/components/ui/Composer';
 import { ToggleRow } from '@/components/ui/ToggleRow';
 import { TopBar } from '@/components/ui/TopBar';
@@ -22,9 +23,20 @@ import { useWorkspace } from '@/lib/WorkspaceContext';
 
 export default function WorkspaceScreen() {
   const router = useRouter();
-  const { session, paired, setPaired, sendPrompt } = useWorkspace();
+  const {
+    session,
+    paired,
+    setPaired,
+    sendPrompt,
+    live,
+    project,
+    connectionState,
+    connectionDetail,
+    stopRun,
+  } = useWorkspace();
 
   const visibleTurns = paired ? session.turns : session.turns.slice(0, 1);
+  const connected = connectionState === 'connected' || connectionState === 'reconnecting';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -34,19 +46,37 @@ export default function WorkspaceScreen() {
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <TopBar
-            eyebrow={`${session.project} • ${session.branch}`}
-            title={session.title}
+            eyebrow={
+              connected && project
+                ? `${project.name} • ${project.branch}`
+                : `${session.project} • ${session.branch}`
+            }
+            title={connected ? 'Live session' : session.title}
             onBack={() => router.push('/')}
-            onMore={() => {}}
+            onMore={() => router.push('/pair')}
           />
 
-          <ToggleRow label="Paired mode" value={paired} onValueChange={setPaired} />
+          {connectionState !== 'idle' ? (
+            <View style={styles.connBar}>
+              <Text style={styles.connText}>
+                {connectionState === 'connected' ? 'Connected to desktop' : connectionState}
+                {connectionDetail ? ` · ${connectionDetail}` : ''}
+              </Text>
+            </View>
+          ) : null}
 
-          <View style={styles.cols}>
-            {visibleTurns.map((turn) => (
-              <AgentPanel key={turn.agentId} turn={turn} prompt={session.prompt} />
-            ))}
-          </View>
+          {connected && live ? (
+            <LiveRunPanel run={live} onStop={stopRun} />
+          ) : (
+            <>
+              <ToggleRow label="Paired mode" value={paired} onValueChange={setPaired} />
+              <View style={styles.cols}>
+                {visibleTurns.map((turn) => (
+                  <AgentPanel key={turn.agentId} turn={turn} prompt={session.prompt} />
+                ))}
+              </View>
+            </>
+          )}
 
           <View style={styles.actions}>
             <Pressable style={styles.action} onPress={() => router.push('/insights')}>
@@ -93,6 +123,16 @@ export default function WorkspaceScreen() {
 }
 
 const styles = StyleSheet.create({
+  connBar: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(110,184,187,0.25)',
+    backgroundColor: 'rgba(110,184,187,0.10)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  connText: { color: '#b7edf0', fontSize: 12 },
   safe: {
     flex: 1,
     backgroundColor: color.bg,

@@ -1,0 +1,187 @@
+import type {
+  AgentEvent,
+  AgentStatus,
+  ClientMessage,
+  PairingPayload,
+  ProjectSummary,
+  ServerMessage,
+} from '@axune/protocol';
+import { PROTOCOL_VERSION } from '@axune/protocol';
+
+/**
+ * The phone's connection to Axune Desktop.
+ *
+ * Holds the session token and the highest `seq` seen per run, so a dropped
+ * connection resumes rather than restarts. Phones lose Wi-Fi constantly —
+ * walking out of a room must not cost a run.
+ */
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+
+export interface ClientCallbacks {
+  onState: (state: ConnectionState, detail?: string) => void;
+  onEvent: (event: AgentEvent, replayed: boolean) => void;
+  onPaired: (project: ProjectSummary, agents: AgentStatus[]) => void;
+  onGap?: (runId: string, missedEvents: number) => void;
+}
+
+export class AxuneClient {
+  private socket: WebSocket | null = null;
+  private url: string | null = null;
+  private sessionToken: string | null = null;
+  /** Highest seq seen per run, so a resume asks for exactly what it missed. */
+  private readonly lastSeq = new Map<string, number>();
+  private activeRunId: string | null = null;
+  private reconnectAttempts = 0;
+  private deliberateClose = false;
+
+  constructor(private readonly callbacks: ClientCallbacks) {}
+
+  /** First contact: redeem the one-time token from the QR code. */
+  pair(payload: PairingPayload, deviceName: string): void {
+    if (payload.kind !== 'axune') {
+      return this.callbacks.onState('failed', 'That QR code is not an Axune pairing code.');
+    }
+    if (payload.protocolVersion !== PROTOCOL_VERSION) {
+      return this.callbacks.onState(
+        'failed',
+        `Version mismatch — the desktop speaks ${payload.protocolVersion}, this app speaks ${PROTOCOL_VERSION}.`,
+      );
+    }
+    if (Date.now() > payload.expiresAt) {
+      return this.callbacks.onState('failed', 'That pairing code has expired. Show a new one.');
+    }
+
+    this.url = payload.url;
+    this.deliberateClose = false;
+    this.open(() => {
+      this.send({
+        type: 'pair',
+        token: payload.token,
+        deviceName,
+        protocolVersion: PROTOCOL_VERSION,
+      });
+    });
+  }
+
+  startRun(runId: string, sessionId: string, prompt: string): void {
+    this.activeRunId = runId;
+    this.lastSeq.set(runId, -1);
+    this.send({
+      type: 'start_run',
+      runId,
+      sessionId,
+      prompt,
+      agentIds: ['claude-code'],
+      mode: 'independent',
+    });
+  }
+
+  stopRun(runId: string): void {
+    this.send({ type: 'stop_run', runId });
+  }
+
+  disconnect(): void {
+    this.deliberateClose = true;
+    this.socket?.close();
+    this.socket = null;
+    this.callbacks.onState('idle');
+  }
+
+  get isConnected(): boolean {
+    return this.socket?.readyState === 1;
+  }
+
+  private open(onOpen: () => void): void {
+    if (!this.url) return;
+    this.callbacks.onState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
+
+    const socket = new WebSocket(this.url);
+    this.socket = socket;
+
+    socket.onopen = () => {
+      this.reconnectAttempts = 0;
+      onOpen();
+    };
+
+    socket.onmessage = (raw) => {
+      let message: ServerMessage;
+      try {
+        message = JSON.parse(String(raw.data)) as ServerMessage;
+      } catch {
+        return;
+      }
+      this.handle(message);
+    };
+
+    socket.onerror = () => {
+      // onclose always follows, and that is where reconnection is handled.
+    };
+
+    socket.onclose = () => {
+      this.socket = null;
+      if (this.deliberateClose) return;
+      this.scheduleReconnect();
+    };
+  }
+
+  private handle(message: ServerMessage): void {
+    switch (message.type) {
+      case 'paired':
+        this.sessionToken = message.sessionToken;
+        this.callbacks.onState('connected');
+        this.callbacks.onPaired(message.project, message.agents);
+        return;
+
+      case 'pair_rejected':
+        this.deliberateClose = true;
+        this.callbacks.onState('failed', message.detail);
+        return;
+
+      case 'resumed':
+        this.callbacks.onState('connected');
+        if (message.missedEvents > 0) {
+          this.callbacks.onGap?.(message.runId, message.missedEvents);
+        }
+        return;
+
+      case 'event': {
+        const { event } = message;
+        const seen = this.lastSeq.get(event.runId) ?? -1;
+        // Replays can overlap with what already arrived live; drop duplicates
+        // rather than rendering the same text twice.
+        if (event.seq <= seen) return;
+        this.lastSeq.set(event.runId, event.seq);
+        this.callbacks.onEvent(event, message.replayed === true);
+        return;
+      }
+
+      default:
+        return;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.sessionToken || !this.activeRunId) {
+      return this.callbacks.onState('idle');
+    }
+    // Back off, but stay responsive: a phone usually rejoins Wi-Fi in seconds.
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000);
+    this.reconnectAttempts += 1;
+    this.callbacks.onState('reconnecting', `retrying in ${Math.round(delay / 1000)}s`);
+
+    setTimeout(() => {
+      this.open(() => {
+        this.send({
+          type: 'resume',
+          token: this.sessionToken!,
+          runId: this.activeRunId!,
+          lastSeq: this.lastSeq.get(this.activeRunId!) ?? -1,
+        });
+      });
+    }, delay);
+  }
+
+  private send(message: ClientMessage): void {
+    if (this.socket?.readyState === 1) this.socket.send(JSON.stringify(message));
+  }
+}
