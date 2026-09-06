@@ -1,4 +1,11 @@
-import type { AgentEvent, AgentStatus, PairingPayload, ProjectSummary } from '@axune/protocol';
+import type {
+  AgentEvent,
+  AgentStatus,
+  Capability,
+  MachineSummary,
+  PairingPayload,
+  ProjectSummary,
+} from '@axune/protocol';
 import React, {
   createContext,
   useCallback,
@@ -32,6 +39,9 @@ export interface LiveRun {
   outcome: string | null;
   /** True while replayed events are being applied after a reconnect. */
   caughtUp: boolean;
+  /** For elapsed time, and for spotting a run that has gone quiet. */
+  startedAt: number | null;
+  lastEventAt: number | null;
 }
 
 /** A run that actually happened, kept so Home and Sessions can show real history. */
@@ -39,15 +49,20 @@ export interface RunSummary {
   runId: string;
   prompt: string;
   startedAt: number;
+  finishedAt: number;
   outcome: 'completed' | 'stopped' | 'failed';
   /** First line of the answer, for the list row. */
   excerpt: string;
+  filesRead: number;
+  commands: number;
 }
 
 export interface ActivityLine {
   id: string;
   label: string;
   ok: boolean | null;
+  /** The file or command, so "Read" can say what it read. */
+  detail?: string;
 }
 
 interface WorkspaceState {
@@ -62,6 +77,9 @@ interface WorkspaceState {
   connectionDetail: string | null;
   project: ProjectSummary | null;
   agents: AgentStatus[];
+  machine: MachineSummary | null;
+  capability: Capability;
+  lastSeenAt: number | null;
   live: LiveRun | null;
   history: RunSummary[];
   newConversation: () => void;
@@ -87,6 +105,8 @@ const emptyRun = (runId: string, prompt: string): LiveRun => ({
   status: 'working',
   outcome: null,
   caughtUp: true,
+  startedAt: Date.now(),
+  lastEventAt: Date.now(),
 });
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
@@ -97,6 +117,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
+  const [machine, setMachine] = useState<MachineSummary | null>(null);
+  const [capability, setCapability] = useState<Capability>('read-only');
+  /** When the desktop was last heard from, so a disconnected Home can say so. */
+  const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
   const [live, setLive] = useState<LiveRun | null>(null);
   const [history, setHistory] = useState<RunSummary[]>([]);
 
@@ -111,10 +135,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const applyEvent = useCallback((event: AgentEvent) => {
     setLive((current) => {
-      const run = current?.runId === event.runId ? current : emptyRun(event.runId, '');
+      const base = current?.runId === event.runId ? current : emptyRun(event.runId, '');
+      const run = { ...base, lastEventAt: Date.now() };
       switch (event.type) {
         case 'run_started':
-          return { ...run, prompt: event.prompt, status: 'working' };
+          return { ...run, prompt: event.prompt, status: 'working', startedAt: Date.now() };
         case 'message_delta':
           return { ...run, text: run.text + event.text };
         case 'tool_started':
@@ -122,7 +147,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             ...run,
             activity: [
               ...run.activity,
-              { id: `${event.seq}`, label: event.toolName, ok: null },
+              {
+                id: `${event.seq}`,
+                label: event.toolName,
+                ok: null,
+                detail: shortDetail(event.input),
+              },
             ],
           };
         case 'tool_finished':
@@ -138,9 +168,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             {
               runId: run.runId,
               prompt: run.prompt,
-              startedAt: Date.now(),
+              startedAt: run.startedAt ?? Date.now(),
+              finishedAt: Date.now(),
               outcome: event.outcome,
               excerpt: firstLine(run.text),
+              filesRead: run.activity.filter((a) => a.label === 'Read').length,
+              commands: run.activity.filter((a) => a.label === 'Bash').length,
             },
             ...past.filter((entry) => entry.runId !== run.runId),
           ]);
@@ -173,6 +206,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       onPaired: (proj, agentList) => {
         setProject(proj);
         setAgents(agentList);
+        setLastSeenAt(Date.now());
         // Persist the credential so a reload, or tomorrow morning, does not
         // mean scanning another QR code.
         const credential = clientRef.current?.credential;
@@ -185,7 +219,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           });
         }
       },
-      onProject: (proj) => setProject(proj),
+      onProject: (proj) => {
+        setProject(proj);
+        setLastSeenAt(Date.now());
+      },
+      onMachine: (info, cap) => {
+        setMachine(info);
+        setCapability(cap);
+        setLastSeenAt(Date.now());
+      },
       onAgents: (agentList) => setAgents(agentList),
       onGap: (_runId, missed) => {
         setConnectionDetail(`caught up — replayed ${missed} events`);
@@ -271,6 +313,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       connectionDetail,
       project,
       agents,
+      machine,
+      capability,
+      lastSeenAt,
       live,
       history,
       newConversation,
@@ -288,6 +333,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       connectionDetail,
       project,
       agents,
+      machine,
+      capability,
+      lastSeenAt,
       live,
       history,
       newConversation,
@@ -304,6 +352,19 @@ export function useWorkspace(): WorkspaceState {
   const ctx = useContext(WorkspaceContext);
   if (!ctx) throw new Error('useWorkspace must be used within a WorkspaceProvider');
   return ctx;
+}
+
+/** Pull a filename or command out of a tool input for a one-line label. */
+function shortDetail(input: string): string | undefined {
+  try {
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    const path = parsed['file_path'] ?? parsed['pattern'] ?? parsed['command'];
+    if (typeof path !== 'string') return undefined;
+    const tail = path.split(/[\/]/).pop() ?? path;
+    return tail.length > 42 ? `${tail.slice(0, 42)}…` : tail;
+  } catch {
+    return undefined;
+  }
 }
 
 function firstLine(text: string): string {

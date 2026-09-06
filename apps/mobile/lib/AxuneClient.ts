@@ -1,7 +1,9 @@
 import type {
   AgentEvent,
   AgentStatus,
+  Capability,
   ClientMessage,
+  MachineSummary,
   PairingPayload,
   ProjectSummary,
   ServerMessage,
@@ -24,6 +26,7 @@ export interface ClientCallbacks {
   onGap?: (runId: string, missedEvents: number) => void;
   onProject?: (project: ProjectSummary) => void;
   onAgents?: (agents: AgentStatus[]) => void;
+  onMachine?: (machine: MachineSummary, capability: Capability) => void;
 }
 
 export class AxuneClient {
@@ -159,6 +162,7 @@ export class AxuneClient {
       case 'paired':
         this.sessionToken = message.sessionToken;
         this.callbacks.onState('connected');
+        this.callbacks.onMachine?.(message.machine, message.capability);
         this.callbacks.onPaired(message.project, message.agents);
         return;
 
@@ -176,6 +180,10 @@ export class AxuneClient {
 
       case 'project_changed':
         this.callbacks.onProject?.(message.project);
+        return;
+
+      case 'machine_changed':
+        this.callbacks.onMachine?.(message.machine, message.capability);
         return;
 
       case 'agents_changed':

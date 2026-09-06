@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { hostname, platform } from 'node:os';
 
 import { ClaudeCodeAdapter, type RunningRun } from '@axune/agent-core';
 import {
   PROTOCOL_VERSION,
+  type Capability,
+  type MachineSummary,
   type AgentEvent,
   type AgentStatus,
   type ClientMessage,
@@ -85,6 +88,16 @@ export class AxuneServer {
     this.broadcast({ type: 'project_changed', project });
   }
 
+  /** The machine the phone is controlling. Shown so the user knows which computer. */
+  machine(): MachineSummary {
+    return { name: hostname(), platform: platform(), connection: 'local' };
+  }
+
+  /** Phase 1 runs are read-only; this becomes read-write with worktree isolation. */
+  capability(): Capability {
+    return 'read-only';
+  }
+
   /**
    * The project with a freshly read git snapshot. Read on demand rather than
    * cached, since the whole point is that it is current when the phone looks.
@@ -135,6 +148,8 @@ export class AxuneServer {
         sessionToken: result.sessionToken,
         project: await this.projectNow(),
         agents: await this.agentStatuses(),
+        machine: this.machine(),
+        capability: this.capability(),
         protocolVersion: PROTOCOL_VERSION,
       });
     }
@@ -166,6 +181,11 @@ export class AxuneServer {
       // at — the project may have changed while it was away.
       this.send(socket, { type: 'project_changed', project: await this.projectNow() });
       this.send(socket, { type: 'agents_changed', agents: await this.agentStatuses() });
+      this.send(socket, {
+        type: 'machine_changed',
+        machine: this.machine(),
+        capability: this.capability(),
+      });
       return;
     }
 

@@ -32,11 +32,35 @@ export interface GitSnapshot {
   lastCommitHash: string;
   /** Files with uncommitted modifications, staged or not. */
   dirtyFiles: number;
+  /** Files git does not track yet. */
+  untrackedFiles: number;
+  /** Lines added and removed in the working tree, for a sense of scale. */
+  insertions: number;
+  deletions: number;
   /** Commits on this branch not yet pushed. Null when there is no upstream. */
   ahead: number | null;
   /** Commits on the upstream not yet merged locally. */
   behind: number | null;
+  /**
+   * States that deserve to be loud. A healthy tree should be quiet; a tree
+   * mid-rebase or with conflicts is the thing worth interrupting someone for.
+   */
+  conflicts: number;
+  inProgress: 'rebase' | 'merge' | 'cherry-pick' | null;
+  detachedHead: boolean;
 }
+
+/** The machine being remotely controlled. */
+export interface MachineSummary {
+  /** Hostname, so the user knows which computer this is. */
+  name: string;
+  platform: string;
+  /** How the phone is reaching it. Remote arrives with the relay. */
+  connection: 'local' | 'relay';
+}
+
+/** What agents are currently permitted to do to the project. */
+export type Capability = 'read-only' | 'read-write';
 
 export interface AgentStatus {
   agentId: AgentId;
@@ -71,6 +95,8 @@ export type ServerMessage =
       sessionToken: string;
       project: ProjectSummary;
       agents: AgentStatus[];
+      machine: MachineSummary;
+      capability: Capability;
       protocolVersion: number;
     }
   | { type: 'pair_rejected'; reason: 'bad_token' | 'expired' | 'version_mismatch'; detail: string }
@@ -79,6 +105,7 @@ export type ServerMessage =
   /** Sent after a resume, before any replayed events, so the phone can show a gap honestly. */
   | { type: 'resumed'; runId: string; fromSeq: number; missedEvents: number }
   | { type: 'project_changed'; project: ProjectSummary }
+  | { type: 'machine_changed'; machine: MachineSummary; capability: Capability }
   | { type: 'agents_changed'; agents: AgentStatus[] }
   | { type: 'pong' };
 
