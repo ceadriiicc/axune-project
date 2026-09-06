@@ -72,7 +72,10 @@ export default function WorkspaceScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={80}
+        // No offset: the tab bar is covered by the keyboard rather than pushed
+        // above it, so anything added here becomes a visible gap between the
+        // composer and the keyboard.
+        keyboardVerticalOffset={0}
       >
         <View style={styles.header}>
           <View style={styles.flex}>
