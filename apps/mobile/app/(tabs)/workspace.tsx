@@ -42,6 +42,8 @@ export default function WorkspaceScreen() {
     connectionState,
     project,
     conversation,
+    threads,
+    openThread,
     live,
     sendPrompt,
     newConversation,
@@ -86,9 +88,12 @@ export default function WorkspaceScreen() {
               {connected ? project?.branch ?? '' : 'Not connected'}
             </Text>
           </View>
+          {/* Labelled, because an unlabelled icon that changes what you are
+              reading is a trap. It archives rather than deletes. */}
           {conversation.length > 0 ? (
             <Pressable style={styles.headerButton} onPress={newConversation} hitSlop={8}>
-              <Ionicons name="create-outline" size={18} color={color.textMuted} />
+              <Ionicons name="add" size={15} color={color.textMuted} />
+              <Text style={styles.headerButtonText}>New</Text>
             </Pressable>
           ) : null}
         </View>
@@ -108,6 +113,25 @@ export default function WorkspaceScreen() {
                   ? 'Claude Code reads the repository on your machine and answers here. It cannot change anything yet.'
                   : 'Scan the code shown by Axune Desktop to connect this phone.'}
               </Text>
+
+              {threads.length > 0 ? (
+                <View style={styles.previous}>
+                  <Text style={styles.previousLabel}>Previous conversations</Text>
+                  {threads.slice(0, 4).map((thread) => (
+                    <Pressable
+                      key={thread.id}
+                      style={styles.previousRow}
+                      onPress={() => openThread(thread.id)}
+                    >
+                      <Ionicons name="chatbubble-outline" size={14} color={color.textSoft} />
+                      <Text style={styles.previousText} numberOfLines={1}>
+                        {thread.runs[0]?.prompt ?? 'Conversation'}
+                      </Text>
+                      <Text style={styles.previousCount}>{thread.runs.length}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
 
               {connected ? (
                 <View style={styles.suggestions}>
@@ -238,14 +262,37 @@ const styles = StyleSheet.create({
   title: { color: color.text, fontSize: 18, fontWeight: '700' },
   subtitle: { color: color.textSoft, fontSize: 12, marginTop: 2 },
   headerButton: {
-    width: 34,
-    height: 34,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    height: 32,
+    paddingHorizontal: 10,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: color.line,
   },
+  headerButtonText: { color: color.textMuted, fontSize: 12, fontWeight: '600' },
+  previous: { marginTop: spacing.lg, gap: 4 },
+  previousLabel: {
+    color: color.textSoft,
+    fontSize: 10.5,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  previousRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: color.line,
+  },
+  previousText: { flex: 1, color: color.textMuted, fontSize: 13 },
+  previousCount: { color: color.textSoft, fontSize: 11 },
 
   thread: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.lg },
 

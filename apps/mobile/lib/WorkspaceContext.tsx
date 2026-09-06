@@ -54,6 +54,19 @@ export interface ActivityLine {
   detail?: string;
 }
 
+/**
+ * A conversation set aside so it can be returned to.
+ *
+ * Each thread carries the id the desktop keys the agent's own resumable
+ * session off, so reopening one and asking a follow-up continues that
+ * conversation rather than starting a new one.
+ */
+export interface Thread {
+  id: string;
+  runs: LiveRun[];
+  startedAt: number;
+}
+
 /** A finished run, kept so Home and Sessions can show real history. */
 export interface RunSummary {
   runId: string;
@@ -83,6 +96,9 @@ interface WorkspaceState {
    * would show the user less than the agent itself remembers.
    */
   conversation: LiveRun[];
+  /** Conversations set aside, newest first. Starting a new one never destroys. */
+  threads: Thread[];
+  openThread: (id: string) => void;
   /** The run currently working, if any. */
   live: LiveRun | null;
   history: RunSummary[];
@@ -124,6 +140,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
 
   const [conversation, setConversation] = useState<LiveRun[]>([]);
+  const [threads, setThreads] = useState<Thread[]>([]);
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [newSinceLastVisit, setNewSinceLastVisit] = useState(0);
@@ -232,11 +249,49 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     void clearPairing();
   }, []);
 
-  /** Start a fresh thread, so the agent does not carry the last one over. */
+  /**
+   * Start a fresh thread. Deliberately archives rather than discards: a control
+   * that silently destroys what you were reading is a trap, and the previous
+   * conversation is often the thing you wanted to keep.
+   */
   const newConversation = useCallback(() => {
+    setConversation((current) => {
+      if (current.length > 0) {
+        const id = conversationIdRef.current;
+        setThreads((past) => [
+          { id, runs: current, startedAt: current[0]?.startedAt ?? Date.now() },
+          ...past.filter((thread) => thread.id !== id),
+        ]);
+      }
+      return [];
+    });
     conversationIdRef.current = randomId();
-    setConversation([]);
   }, []);
+
+  /**
+   * Reopen an archived conversation. Restores the agent's session id too, so a
+   * follow-up continues where it left off instead of starting over.
+   */
+  const openThread = useCallback(
+    (id: string) => {
+      const thread = threads.find((entry) => entry.id === id);
+      if (!thread) return;
+      setConversation((current) => {
+        if (current.length > 0) {
+          const currentId = conversationIdRef.current;
+          setThreads((past) => [
+            { id: currentId, runs: current, startedAt: current[0]?.startedAt ?? Date.now() },
+            ...past.filter((entry) => entry.id !== currentId && entry.id !== id),
+          ]);
+        } else {
+          setThreads((past) => past.filter((entry) => entry.id !== id));
+        }
+        return thread.runs;
+      });
+      conversationIdRef.current = id;
+    },
+    [threads],
+  );
 
   const live = useMemo(
     () => conversation.find((run) => run.status === 'working') ?? null,
@@ -284,6 +339,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       capability,
       lastSeenAt,
       conversation,
+      threads,
+      openThread,
       live,
       history,
       activity,
@@ -304,6 +361,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       capability,
       lastSeenAt,
       conversation,
+      threads,
+      openThread,
       live,
       history,
       activity,
