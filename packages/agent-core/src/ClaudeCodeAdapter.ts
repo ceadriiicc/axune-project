@@ -1,0 +1,261 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentEvent } from '@axune/protocol';
+
+import type {
+  AgentAdapter,
+  DetectionResult,
+  RunHandle,
+  RunRequest,
+  RunningRun,
+} from './AgentAdapter';
+
+const execFileAsync = promisify(execFile);
+
+/** Tools that only read. Everything else is a write or a command in Phase 1 terms. */
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite']);
+
+export class ClaudeCodeAdapter implements AgentAdapter {
+  readonly agentId = 'claude-code' as const;
+
+  async detect(): Promise<DetectionResult> {
+    try {
+      const { stdout } = await execFileAsync('claude', ['--version'], {
+        timeout: 15_000,
+        windowsHide: true,
+      });
+      const version = stdout.trim() || null;
+      return {
+        installed: true,
+        version,
+        // Claude Code exposes no documented "am I authenticated" command. Claiming
+        // yes here would be a guess, and claiming no would be wrong most of the
+        // time — the honest answer is that it cannot be known without a run.
+        authenticated: 'unknown',
+        detail: `Found claude ${version ?? '(version unknown)'}`,
+      };
+    } catch (error) {
+      return {
+        installed: false,
+        version: null,
+        authenticated: 'no',
+        detail: `claude not found on PATH: ${describeError(error)}`,
+      };
+    }
+  }
+
+  /**
+   * Starts a run and returns immediately with a handle, so the caller can stop
+   * it while it is still going. Events arrive on `onEvent` in `seq` order.
+   */
+  start(request: RunRequest, onEvent: (event: AgentEvent) => void): RunningRun {
+    const abort = new AbortController();
+    let seq = 0;
+    let providerSessionId: string | null = null;
+
+    const emit = (body: Omit<AgentEvent, keyof EnvelopeFields>) => {
+      onEvent({
+        seq: seq++,
+        runId: request.runId,
+        sessionId: request.sessionId,
+        agentId: this.agentId,
+        ts: Date.now(),
+        ...body,
+      } as AgentEvent);
+    };
+
+    const done = (async (): Promise<RunHandle> => {
+      let outcome: RunHandle['outcome'] = 'completed';
+
+      emit({
+        type: 'run_started',
+        prompt: request.prompt,
+        mode: request.mode,
+        branch: request.branch,
+        worktreePath: null,
+      });
+
+      try {
+        const stream = query({
+          prompt: request.prompt,
+          options: {
+            cwd: request.cwd,
+            abortController: abort,
+            // Leave permissions in a prompting mode on purpose. `canUseTool`
+            // fires ONLY when the permission flow falls through to a prompt —
+            // populating `allowedTools` or using a permissive permissionMode
+            // silently bypasses the gate, which would make the approval system
+            // look like it works while approving nothing.
+            permissionMode: 'default',
+            allowedTools: [],
+            // Load the target repository's own CLAUDE.md and settings, since the
+            // agent is meant to work the way that project expects.
+            settingSources: ['project'],
+            ...(request.resumeSessionId ? { resume: request.resumeSessionId } : {}),
+            canUseTool: async (toolRequest) => {
+              const toolName = toolRequest?.toolName ?? 'unknown';
+              const input = safeStringify(toolRequest?.toolInput);
+
+              if (request.readOnly && !READ_ONLY_TOOLS.has(toolName)) {
+                emit({
+                  type: 'tool_finished',
+                  toolCallId: toolRequest?.toolUseId ?? toolName,
+                  ok: false,
+                  output: `Denied: ${toolName} would modify state, and this run is read-only.`,
+                });
+                return {
+                  approved: false,
+                  reason: 'This Axune run is read-only. Inspect and report instead of changing anything.',
+                };
+              }
+
+              emit({
+                type: 'tool_started',
+                toolCallId: toolRequest?.toolUseId ?? toolName,
+                toolName,
+                input,
+              });
+              return { approved: true };
+            },
+          },
+        });
+
+        emit({ type: 'working', label: 'Claude Code is working' });
+
+        for await (const message of stream as AsyncIterable<UnknownMessage>) {
+          providerSessionId = pickSessionId(message) ?? providerSessionId;
+          for (const event of translate(message)) {
+            emit(event);
+          }
+        }
+      } catch (error) {
+        if (abort.signal.aborted) {
+          outcome = 'stopped';
+        } else {
+          outcome = 'failed';
+          emit({ type: 'error', message: describeError(error), recoverable: false });
+        }
+      }
+
+      emit({ type: 'run_finished', outcome });
+      return { runId: request.runId, providerSessionId, outcome };
+    })();
+
+    return {
+      runId: request.runId,
+      stop: async () => {
+        abort.abort();
+        await done.catch(() => undefined);
+      },
+      done,
+    };
+  }
+
+  async run(request: RunRequest, onEvent: (event: AgentEvent) => void): Promise<RunHandle> {
+    return this.start(request, onEvent).done;
+  }
+}
+
+type EnvelopeFields = { seq: number; runId: string; sessionId: string; agentId: unknown; ts: number };
+
+/**
+ * The SDK's message shapes are normalised defensively rather than assumed.
+ * Documentation and observed output have differed before, and an adapter that
+ * throws on an unexpected shape would take the whole run down.
+ */
+type UnknownMessage = Record<string, unknown>;
+
+function pickSessionId(message: UnknownMessage): string | null {
+  const id = message['session_id'];
+  return typeof id === 'string' ? id : null;
+}
+
+function translate(message: UnknownMessage): Array<Omit<AgentEvent, keyof EnvelopeFields>> {
+  const type = message['type'];
+  const events: Array<Omit<AgentEvent, keyof EnvelopeFields>> = [];
+
+  if (type === 'assistant') {
+    for (const block of contentBlocks(message)) {
+      const blockType = block['type'];
+      if (blockType === 'text' && typeof block['text'] === 'string' && block['text'].length > 0) {
+        events.push({ type: 'message_delta', text: block['text'] });
+      } else if (blockType === 'tool_use') {
+        events.push({
+          type: 'tool_started',
+          toolCallId: String(block['id'] ?? ''),
+          toolName: String(block['name'] ?? 'unknown'),
+          input: safeStringify(block['input']),
+        });
+      }
+    }
+    return events;
+  }
+
+  if (type === 'user') {
+    for (const block of contentBlocks(message)) {
+      if (block['type'] === 'tool_result') {
+        events.push({
+          type: 'tool_finished',
+          toolCallId: String(block['tool_use_id'] ?? ''),
+          ok: block['is_error'] !== true,
+          output: extractText(block['content']),
+        });
+      }
+    }
+    return events;
+  }
+
+  if (type === 'result') {
+    const subtype = String(message['subtype'] ?? '');
+    if (subtype && subtype !== 'success') {
+      events.push({ type: 'error', message: `Run ended: ${subtype}`, recoverable: true });
+    }
+    return events;
+  }
+
+  return events;
+}
+
+/** Content may sit at `message.content` or nested under `message.message.content`. */
+function contentBlocks(message: UnknownMessage): UnknownMessage[] {
+  const direct = message['content'];
+  if (Array.isArray(direct)) return direct as UnknownMessage[];
+
+  const nested = message['message'];
+  if (nested && typeof nested === 'object') {
+    const inner = (nested as UnknownMessage)['content'];
+    if (Array.isArray(inner)) return inner as UnknownMessage[];
+  }
+  return [];
+}
+
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) =>
+        block && typeof block === 'object' && typeof (block as UnknownMessage)['text'] === 'string'
+          ? String((block as UnknownMessage)['text'])
+          : '',
+      )
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
+function safeStringify(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value ?? null) ?? '';
+  } catch {
+    return '[unserialisable]';
+  }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
