@@ -86,7 +86,21 @@ export type ClientMessage =
    * This is why every event carries `seq`.
    */
   | { type: 'resume'; token: string; runId: string; lastSeq: number; lastSeenAt?: number }
-  | { type: 'start_run'; runId: string; sessionId: string; prompt: string; agentIds: AgentId[]; mode: RunMode }
+  | {
+      type: 'start_run';
+      runId: string;
+      sessionId: string;
+      prompt: string;
+      agentIds: AgentId[];
+      mode: RunMode;
+      /**
+       * Whether the agent may change files. A write run happens in its own
+       * branch and worktree, never the user's working tree.
+       */
+      write?: boolean;
+    }
+  /** Keep the branch an agent produced, or throw it away. */
+  | { type: 'resolve_changes'; runId: string; decision: 'keep' | 'discard' }
   | { type: 'stop_run'; runId: string }
   | { type: 'ping' };
 
@@ -118,6 +132,8 @@ export type ServerMessage =
   | { type: 'activity'; events: ActivityEvent[]; sinceLastVisit: number }
   /** A single event as it happens, while the phone is connected. */
   | { type: 'activity_event'; event: ActivityEvent }
+  /** What a write run produced, once it has finished. */
+  | { type: 'changes'; runId: string; result: ChangeSet }
   | { type: 'pong' };
 
 /**
@@ -150,6 +166,25 @@ export type ActivityKind =
   | 'git.pushed'
   | 'device.paired'
   | 'device.disconnected';
+
+/** The outcome of a write run: a branch, and what is on it. */
+export interface ChangeSet {
+  branch: string;
+  /** Commit created on that branch, or null when the agent changed nothing. */
+  commit: string | null;
+  files: ChangedFile[];
+  insertions: number;
+  deletions: number;
+  /** Unified diff, truncated for a phone. */
+  patch: string;
+}
+
+export interface ChangedFile {
+  path: string;
+  insertions: number;
+  deletions: number;
+  status: 'modified' | 'created' | 'deleted';
+}
 
 /** What the desktop encodes into the pairing QR code. */
 export interface PairingPayload {

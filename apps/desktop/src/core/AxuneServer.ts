@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hostname, platform } from 'node:os';
 
 import { ClaudeCodeAdapter, type RunningRun } from '@axune/agent-core';
+import { WorktreeManager, type Worktree } from '@axune/git-core';
 import {
   PROTOCOL_VERSION,
   type Capability,
@@ -41,6 +42,13 @@ export class AxuneServer {
 
   private readonly activity = new ActivityLog();
   private watcher: GitWatcher | null = null;
+  /**
+   * Lazy: constructor parameter properties are assigned after field
+   * initialisers run, so building this eagerly reads an undefined project.
+   */
+  private worktreesCache: WorktreeManager | null = null;
+  /** Worktrees belonging to runs that have finished but not been resolved. */
+  private readonly pending = new Map<string, Worktree>();
 
   constructor(
     readonly pairing: PairingManager,
@@ -107,9 +115,18 @@ export class AxuneServer {
     return { name: hostname(), platform: platform(), connection: 'local' };
   }
 
-  /** Phase 1 runs are read-only; this becomes read-write with worktree isolation. */
+  /**
+   * Writing is allowed because it is contained: an editing run happens on its
+   * own branch in its own worktree, so the user's working tree is never the
+   * thing being changed.
+   */
   capability(): Capability {
-    return 'read-only';
+    return 'read-write';
+  }
+
+  private get worktrees(): WorktreeManager {
+    if (!this.worktreesCache) this.worktreesCache = new WorktreeManager(this.project.path);
+    return this.worktreesCache;
   }
 
   /**
@@ -214,19 +231,45 @@ export class AxuneServer {
 
     if (message.type === 'ping') return this.send(socket, { type: 'pong' });
 
-    if (message.type === 'start_run') return this.startRun(message);
+    if (message.type === 'start_run') return void this.startRun(message);
 
     if (message.type === 'stop_run') {
       const run = this.running.get(message.runId);
       await run?.stop().catch(() => undefined);
       return;
     }
+
+    if (message.type === 'resolve_changes') {
+      const worktree = this.pending.get(message.runId);
+      if (!worktree) return;
+      this.pending.delete(message.runId);
+
+      if (message.decision === 'discard') {
+        await this.worktrees.discard(worktree);
+        this.activity.record('run.stopped', 'Discarded agent changes', worktree.branch);
+      } else {
+        this.activity.record('run.completed', 'Kept agent changes', worktree.branch);
+      }
+      this.broadcast({ type: 'project_changed', project: await this.projectNow() });
+      return;
+    }
   }
 
-  private startRun(message: Extract<ClientMessage, { type: 'start_run' }>): void {
+  private async startRun(message: Extract<ClientMessage, { type: 'start_run' }>): Promise<void> {
     if (this.running.has(message.runId)) return; // Idempotent: a retried start must not double-run.
 
     this.registry.open(message.runId);
+
+    // A write run gets its own branch and directory. Failing to create one is
+    // not a reason to fall back to editing the user's tree — the run simply
+    // stays read-only, which is the safe direction to fail in.
+    let worktree: Worktree | null = null;
+    if (message.write && this.project.isGitRepo) {
+      worktree = await this.worktrees
+        .create('claude-code', message.runId)
+        .catch(() => null);
+    }
+    const writing = Boolean(worktree);
 
     const run = this.claude.start(
       {
@@ -234,11 +277,9 @@ export class AxuneServer {
         sessionId: message.sessionId,
         mode: message.mode,
         prompt: message.prompt,
-        cwd: this.project.path,
-        branch: this.project.branch,
-        // Phase 1 is read-only. Write access waits for worktree isolation, so a
-        // second agent cannot trample the first one's working tree.
-        readOnly: true,
+        cwd: worktree?.path ?? this.project.path,
+        branch: worktree?.branch ?? this.project.branch,
+        readOnly: !writing,
         // Continue the same provider conversation when we have seen this Axune
         // session before, so the agent remembers the previous prompt.
         resumeSessionId: this.store.providerSession(message.sessionId, 'claude-code'),
@@ -263,6 +304,8 @@ export class AxuneServer {
               : 'run.failed';
         this.activity.record(kind, `Run ${handle.outcome}`, truncate(message.prompt));
 
+        if (worktree) await this.reportChanges(worktree, message.runId, message.prompt);
+
         // A run often changes the working tree; tell the phone what it looks
         // like now rather than leaving a stale snapshot on screen.
         this.broadcast({ type: 'project_changed', project: await this.projectNow() });
@@ -275,6 +318,44 @@ export class AxuneServer {
         }
       })
       .finally(() => this.running.delete(message.runId));
+  }
+
+  /**
+   * Commit whatever the agent wrote, describe it, and hand the branch to the
+   * phone to keep or throw away. The worktree directory is released either way;
+   * the branch survives until the user decides.
+   */
+  private async reportChanges(worktree: Worktree, runId: string, prompt: string): Promise<void> {
+    try {
+      const files = await this.worktrees.changes(worktree);
+      const patch = await this.worktrees.diff(worktree);
+      const commit = await this.worktrees.commit(worktree, `Axune: ${truncate(prompt, 60)}`);
+
+      this.broadcast({
+        type: 'changes',
+        runId,
+        result: {
+          branch: worktree.branch,
+          commit,
+          files,
+          insertions: files.reduce((sum, file) => sum + file.insertions, 0),
+          deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+          patch,
+        },
+      });
+
+      await this.worktrees.release(worktree);
+
+      if (commit) {
+        this.pending.set(runId, worktree);
+      } else {
+        // Nothing was written, so there is no decision to make and no branch
+        // worth keeping around.
+        await this.worktrees.discard(worktree);
+      }
+    } catch {
+      await this.worktrees.release(worktree).catch(() => undefined);
+    }
   }
 
   /** Hand a freshly connected phone the backlog, and say how much is new. */

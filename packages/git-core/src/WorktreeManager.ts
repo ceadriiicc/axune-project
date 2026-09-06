@@ -39,14 +39,38 @@ export class WorktreeManager {
     return { branch, path, base, agentId, runId };
   }
 
-  /** Files the agent touched, with the scale of each change. */
-  async changes(worktree: Worktree): Promise<FileChange[]> {
-    const output = await this.git(
-      ['diff', '--numstat', worktree.base],
-      worktree.path,
-    ).catch(() => '');
+  /**
+   * Stage new files as "intent to add" so they appear in diffs.
+   *
+   * Without this a file the agent created is invisible to `git diff` — the
+   * review would say "1 file created" and show nothing, which is worse than
+   * useless when the whole point is deciding whether to keep the work.
+   */
+  private async includeUntracked(worktree: Worktree): Promise<void> {
+    await this.git(['add', '--intent-to-add', '--all'], worktree.path).catch(() => undefined);
+  }
 
-    const tracked = output
+  /** Files the agent touched, with the scale and kind of each change. */
+  async changes(worktree: Worktree): Promise<FileChange[]> {
+    await this.includeUntracked(worktree);
+
+    // Two passes: numstat gives the line counts, name-status gives the kind.
+    // Intent-to-add makes a created file look tracked, so without the second
+    // pass everything reports as "modified" and a review cannot tell a new
+    // file from an edited one.
+    const [numstat, nameStatus] = await Promise.all([
+      this.git(['diff', '--numstat', worktree.base], worktree.path).catch(() => ''),
+      this.git(['diff', '--name-status', worktree.base], worktree.path).catch(() => ''),
+    ]);
+
+    const kinds = new Map<string, FileChange['status']>();
+    for (const line of nameStatus.split('\n')) {
+      const [code, path] = line.split('\t');
+      if (!path) continue;
+      kinds.set(path, code?.startsWith('A') ? 'created' : code?.startsWith('D') ? 'deleted' : 'modified');
+    }
+
+    return numstat
       .split('\n')
       .filter((line) => line.trim())
       .map((line) => {
@@ -55,23 +79,14 @@ export class WorktreeManager {
           path: path ?? '',
           insertions: Number(added) || 0,
           deletions: Number(removed) || 0,
-          status: 'modified' as const,
+          status: kinds.get(path ?? '') ?? 'modified',
         };
       });
-
-    // Files git does not know about yet would otherwise be invisible, which is
-    // exactly the case where an agent has created something new.
-    const untracked = (await this.git(['ls-files', '--others', '--exclude-standard'], worktree.path)
-      .catch(() => ''))
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((path) => ({ path, insertions: 0, deletions: 0, status: 'created' as const }));
-
-    return [...tracked, ...untracked];
   }
 
   /** The patch itself, for review before anything is merged. */
   async diff(worktree: Worktree, maxBytes = 200_000): Promise<string> {
+    await this.includeUntracked(worktree);
     const patch = await this.git(['diff', worktree.base], worktree.path).catch(() => '');
     return patch.length > maxBytes ? `${patch.slice(0, maxBytes)}\n… diff truncated` : patch;
   }
@@ -131,5 +146,5 @@ export interface FileChange {
   path: string;
   insertions: number;
   deletions: number;
-  status: 'modified' | 'created';
+  status: 'modified' | 'created' | 'deleted';
 }

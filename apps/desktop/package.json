@@ -8,13 +8,15 @@
     "typecheck": "tsc --noEmit",
     "serve": "tsx src/serve.ts",
     "try": "tsx src/tryTransport.ts",
-    "try:continuity": "tsx src/tryContinuity.ts"
+    "try:continuity": "tsx src/tryContinuity.ts",
+    "try:write": "tsx src/tryWrite.ts"
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",
     "@axune/protocol": "file:../../packages/protocol",
     "qrcode-terminal": "^0.12.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@axune/git-core": "file:../../packages/git-core"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
