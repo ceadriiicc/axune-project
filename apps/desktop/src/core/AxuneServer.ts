@@ -179,6 +179,7 @@ export class AxuneServer {
       this.activity.record('device.paired', `${message.deviceName} paired`);
       this.announce(`${message.deviceName} paired`);
       this.sendActivity(socket, message.lastSeenAt);
+      void this.sendBranches(socket);
       return this.send(socket, {
         type: 'paired',
         sessionToken: result.sessionToken,
@@ -202,6 +203,7 @@ export class AxuneServer {
       this.authed.set(socket, message.token);
       this.announce(`device reconnected, replaying run ${message.runId.slice(0, 8)}`);
       this.sendActivity(socket, message.lastSeenAt);
+      void this.sendBranches(socket);
 
       const slice = this.registry.since(message.runId, message.lastSeq);
       this.send(socket, {
@@ -239,6 +241,13 @@ export class AxuneServer {
       return;
     }
 
+    if (message.type === 'delete_branch') {
+      await this.worktrees.deleteBranch(message.branch).catch(() => undefined);
+      this.activity.record('run.stopped', 'Deleted a branch', message.branch);
+      await this.sendBranches(socket);
+      return;
+    }
+
     if (message.type === 'resolve_changes') {
       const worktree = this.pending.get(message.runId);
       if (!worktree) return;
@@ -251,6 +260,7 @@ export class AxuneServer {
         this.activity.record('run.completed', 'Kept agent changes', worktree.branch);
       }
       this.broadcast({ type: 'project_changed', project: await this.projectNow() });
+      await this.sendBranches(socket);
       return;
     }
   }
@@ -358,6 +368,14 @@ export class AxuneServer {
     } catch {
       await this.worktrees.release(worktree).catch(() => undefined);
     }
+  }
+
+  /** Branches agents left behind, so kept work is findable from the app. */
+  private async sendBranches(socket: WebSocket): Promise<void> {
+    const branches = await this.worktrees
+      .branches(this.project.branch)
+      .catch(() => []);
+    this.send(socket, { type: 'branches', branches });
   }
 
   /** Hand a freshly connected phone the backlog, and say how much is new. */

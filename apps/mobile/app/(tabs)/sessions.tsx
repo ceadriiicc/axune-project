@@ -17,8 +17,17 @@ import { useWorkspace } from '@/lib/WorkspaceContext';
  */
 export default function SessionsScreen() {
   const router = useRouter();
-  const { history, machine, project, capability, connectionState, agents, disconnect } =
-    useWorkspace();
+  const {
+    history,
+    machine,
+    project,
+    capability,
+    connectionState,
+    agents,
+    branches,
+    deleteBranch,
+    disconnect,
+  } = useWorkspace();
 
   const connected = connectionState === 'connected' || connectionState === 'reconnecting';
 
@@ -62,6 +71,36 @@ export default function SessionsScreen() {
             ))}
           </View>
         )}
+
+        {branches.length > 0 ? (
+          <>
+            <Text style={styles.sectionLabel}>Agent branches</Text>
+            <View style={styles.card}>
+              {branches.map((branch) => (
+                <View key={branch.name} style={styles.branchRow}>
+                  <View style={styles.branchCopy}>
+                    <Text style={styles.branchName} numberOfLines={1}>
+                      {branch.name.replace(/^axune\//, '')}
+                    </Text>
+                    <Text style={styles.branchMeta} numberOfLines={1}>
+                      {branch.files} file{branch.files === 1 ? '' : 's'} · {ago(branch.at)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => deleteBranch(branch.name)}
+                    hitSlop={10}
+                    style={styles.branchDelete}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={color.textSoft} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.branchHint}>
+              Merge one at your desk with git merge {branches[0]?.name ?? ''}
+            </Text>
+          </>
+        ) : null}
 
         <Text style={styles.sectionLabel}>Connection</Text>
         <View style={styles.card}>
@@ -183,6 +222,12 @@ const styles = StyleSheet.create({
   detailLabel: { color: color.textSoft, fontSize: 13 },
   detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1 },
   muted: { color: color.textSoft, fontSize: 13, paddingVertical: 10 },
+  branchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 10 },
+  branchCopy: { flex: 1 },
+  branchName: { color: color.codexText, fontSize: 13, fontWeight: '600' },
+  branchMeta: { color: color.textSoft, fontSize: 11, marginTop: 2 },
+  branchDelete: { padding: 4 },
+  branchHint: { color: color.textSoft, fontSize: 11, marginTop: 6, lineHeight: 16 },
 
   danger: {
     flexDirection: 'row',

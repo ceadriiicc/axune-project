@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  AgentBranch,
   AgentEvent,
   ChangeSet,
   AgentStatus,
@@ -32,6 +33,7 @@ export interface ClientCallbacks {
   onActivity?: (events: ActivityEvent[], sinceLastVisit: number) => void;
   onActivityEvent?: (event: ActivityEvent) => void;
   onChanges?: (runId: string, result: ChangeSet) => void;
+  onBranches?: (branches: AgentBranch[]) => void;
 }
 
 export class AxuneClient {
@@ -122,6 +124,10 @@ export class AxuneClient {
     this.send({ type: 'resolve_changes', runId, decision });
   }
 
+  deleteBranch(branch: string): void {
+    this.send({ type: 'delete_branch', branch });
+  }
+
   stopRun(runId: string): void {
     this.send({ type: 'stop_run', runId });
   }
@@ -200,6 +206,10 @@ export class AxuneClient {
 
       case 'project_changed':
         this.callbacks.onProject?.(message.project);
+        return;
+
+      case 'branches':
+        this.callbacks.onBranches?.(message.branches);
         return;
 
       case 'changes':

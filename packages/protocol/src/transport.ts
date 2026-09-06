@@ -101,6 +101,8 @@ export type ClientMessage =
     }
   /** Keep the branch an agent produced, or throw it away. */
   | { type: 'resolve_changes'; runId: string; decision: 'keep' | 'discard' }
+  /** Delete a branch an agent produced that was never merged. */
+  | { type: 'delete_branch'; branch: string }
   | { type: 'stop_run'; runId: string }
   | { type: 'ping' };
 
@@ -134,6 +136,8 @@ export type ServerMessage =
   | { type: 'activity_event'; event: ActivityEvent }
   /** What a write run produced, once it has finished. */
   | { type: 'changes'; runId: string; result: ChangeSet }
+  /** Branches agents have produced and the user chose to keep. */
+  | { type: 'branches'; branches: AgentBranch[] }
   | { type: 'pong' };
 
 /**
@@ -185,6 +189,14 @@ export interface ChangeSet {
    * is reviewed, but the reviewer should know.
    */
   behindBy: number;
+}
+
+/** A branch left behind by a kept write run. */
+export interface AgentBranch {
+  name: string;
+  subject: string;
+  at: number;
+  files: number;
 }
 
 export interface ChangedFile {

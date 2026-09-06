@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  AgentBranch,
   AgentEvent,
   AgentStatus,
   ChangeSet,
@@ -116,6 +117,9 @@ interface WorkspaceState {
 
   sendPrompt: (prompt: string, write?: boolean) => void;
   resolveChanges: (runId: string, decision: 'keep' | 'discard') => void;
+  /** Branches agents left behind, so kept work does not become invisible. */
+  branches: AgentBranch[];
+  deleteBranch: (branch: string) => void;
   newConversation: () => void;
   pair: (payload: PairingPayload) => void;
   disconnect: () => void;
@@ -154,6 +158,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [branches, setBranches] = useState<AgentBranch[]>([]);
   const [newSinceLastVisit, setNewSinceLastVisit] = useState(0);
 
   const clientRef = useRef<AxuneClient | null>(null);
@@ -225,6 +230,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setActivity((past) => [...past.slice(-80), event]);
         setNewSinceLastVisit((count) => count + 1);
       },
+      onBranches: setBranches,
       onChanges: (runId, result) =>
         setConversation((current) =>
           current.map((run) => (run.runId === runId ? { ...run, changes: result } : run)),
@@ -332,6 +338,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * Keep the branch or throw it away. Applied optimistically so the buttons
    * respond immediately; the desktop is the one that actually deletes.
    */
+  const deleteBranch = useCallback((branch: string) => {
+    clientRef.current?.deleteBranch(branch);
+    setBranches((current) => current.filter((entry) => entry.name !== branch));
+  }, []);
+
   const resolveChanges = useCallback((runId: string, decision: 'keep' | 'discard') => {
     clientRef.current?.resolveChanges(runId, decision);
     setConversation((current) =>
@@ -374,6 +385,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       markChecked,
       sendPrompt,
       resolveChanges,
+      branches,
+      deleteBranch,
       newConversation,
       pair,
       disconnect,
@@ -397,6 +410,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       markChecked,
       sendPrompt,
       resolveChanges,
+      branches,
+      deleteBranch,
       newConversation,
       pair,
       disconnect,

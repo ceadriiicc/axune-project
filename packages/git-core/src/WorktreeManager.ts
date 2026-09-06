@@ -95,12 +95,17 @@ export class WorktreeManager {
    * Commit whatever the agent changed, so the work survives the worktree being
    * removed. Returns null when it changed nothing.
    */
-  async commit(worktree: Worktree, message: string): Promise<string | null> {
+  async commit(worktree: Worktree, subject: string, body?: string): Promise<string | null> {
     await this.git(['add', '-A'], worktree.path);
     const staged = await this.git(['diff', '--cached', '--name-only'], worktree.path);
     if (!staged.trim()) return null;
 
-    await this.git(['commit', '-m', message], worktree.path);
+    // Subject stays short for logs; the body carries the prompt in full, since
+    // a truncated subject is a poor record of intent for something permanent.
+    const args = ['commit', '-m', subject];
+    if (body && body.trim() && body.trim() !== subject) args.push('-m', body.trim());
+
+    await this.git(args, worktree.path);
     return this.git(['rev-parse', '--short', 'HEAD'], worktree.path);
   }
 
@@ -116,6 +121,49 @@ export class WorktreeManager {
   async discard(worktree: Worktree): Promise<void> {
     await this.release(worktree);
     await this.git(['branch', '-D', worktree.branch]).catch(() => undefined);
+  }
+
+  /**
+   * Branches Axune has produced, newest first.
+   *
+   * Kept work is otherwise invisible — it exists only if you happen to run
+   * `git branch`. Anything an agent wrote and a user chose to keep should be
+   * findable from the app that created it.
+   */
+  async branches(defaultBranch = 'main'): Promise<AgentBranch[]> {
+    const output = await this.git([
+      'branch',
+      '--list',
+      'axune/*',
+      '--sort=-committerdate',
+      '--format=%(refname:short)|%(committerdate:unix)|%(subject)',
+    ]).catch(() => '');
+
+    const rows = output.split('\n').filter((line) => line.trim());
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const [name = '', at = '0', ...rest] = row.split('|');
+        const stat = await this.git([
+          'diff',
+          '--shortstat',
+          `${defaultBranch}...${name}`,
+        ]).catch(() => '');
+        return {
+          name,
+          subject: rest.join('|'),
+          at: Number(at) * 1000,
+          files: Number(/(\d+) files? changed/.exec(stat)?.[1] ?? 0),
+        };
+      }),
+    );
+  }
+
+  /** Delete a branch by name, for cleaning up work that was never merged. */
+  async deleteBranch(name: string): Promise<void> {
+    // Only ever Axune's own branches. A stray name must never reach here.
+    if (!name.startsWith('axune/')) throw new Error(`Refusing to delete ${name}`);
+    await this.git(['branch', '-D', name]);
   }
 
   /**
@@ -149,6 +197,13 @@ export interface Worktree {
   base: string;
   agentId: string;
   runId: string;
+}
+
+export interface AgentBranch {
+  name: string;
+  subject: string;
+  at: number;
+  files: number;
 }
 
 export interface FileChange {
