@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@axune/protocol';
 
+import { isReadOnlyShellCommand } from './readOnlyShell';
 import type {
   AgentAdapter,
   DetectionResult,
@@ -144,7 +145,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
               // {approved:boolean} is treated as a malformed response and the
               // tool call fails with an error rather than a decision — which is
               // how this bug first showed up.
-              if (request.readOnly && !READ_ONLY_TOOLS.has(toolName)) {
+              // Bash is judged by what it would run, not by its name. Denying
+              // the whole tool costs the agent `ls` and `git log`, and it
+              // compensates by hammering Glob and Read to reconstruct the same
+              // information — slow, noisy, and worse for the reader.
+              const readOnlyBash =
+                toolName === 'Bash' && isReadOnlyShellCommand(toolInput?.['command']);
+
+              if (request.readOnly && !READ_ONLY_TOOLS.has(toolName) && !readOnlyBash) {
                 emit({
                   type: 'tool_finished',
                   toolCallId: toolName,
