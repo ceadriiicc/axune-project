@@ -14,6 +14,8 @@ import {
 } from '@axune/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
 
+import { ActivityLog } from './ActivityLog';
+import { GitWatcher } from './GitWatcher';
 import { readGitSnapshot } from './gitSnapshot';
 import { PairingManager } from './PairingManager';
 import { RunRegistry } from './RunRegistry';
@@ -37,6 +39,9 @@ export class AxuneServer {
   private readonly eventListeners = new Set<(event: AgentEvent) => void>();
   private readonly connectionListeners = new Set<(state: string) => void>();
 
+  private readonly activity = new ActivityLog();
+  private watcher: GitWatcher | null = null;
+
   constructor(
     readonly pairing: PairingManager,
     private project: ProjectSummary,
@@ -58,11 +63,20 @@ export class AxuneServer {
       this.wss!.once('error', reject);
     });
 
+    // Watch the repository even with no phone connected — the changes worth
+    // reporting are the ones that happen while the user is away.
+    if (this.project.isGitRepo) {
+      this.watcher = new GitWatcher(this.project.path, this.activity, () => this.project.branch);
+      await this.watcher.start();
+    }
+    this.activity.onEvent((event) => this.broadcast({ type: 'activity_event', event }));
+
     const address = this.wss.address();
     return typeof address === 'object' && address ? address.port : port;
   }
 
   async stop(): Promise<void> {
+    this.watcher?.stop();
     for (const run of this.running.values()) await run.stop().catch(() => undefined);
     this.running.clear();
     await new Promise<void>((resolve) => this.wss?.close(() => resolve()) ?? resolve());
@@ -121,7 +135,10 @@ export class AxuneServer {
 
   private onConnection(socket: WebSocket): void {
     socket.on('close', () => {
-      if (this.authed.has(socket)) this.announce('device disconnected');
+      if (this.authed.has(socket)) {
+        this.activity.record('device.disconnected', 'Phone disconnected');
+        this.announce('device disconnected');
+      }
     });
     socket.on('message', (raw) => {
       let message: ClientMessage;
@@ -142,7 +159,9 @@ export class AxuneServer {
       }
       this.authed.set(socket, result.sessionToken);
       this.store.trustDevice(result.sessionToken, message.deviceName);
+      this.activity.record('device.paired', `${message.deviceName} paired`);
       this.announce(`${message.deviceName} paired`);
+      this.sendActivity(socket, message.lastSeenAt);
       return this.send(socket, {
         type: 'paired',
         sessionToken: result.sessionToken,
@@ -165,6 +184,7 @@ export class AxuneServer {
       }
       this.authed.set(socket, message.token);
       this.announce(`device reconnected, replaying run ${message.runId.slice(0, 8)}`);
+      this.sendActivity(socket, message.lastSeenAt);
 
       const slice = this.registry.since(message.runId, message.lastSeq);
       this.send(socket, {
@@ -230,9 +250,19 @@ export class AxuneServer {
       },
     );
 
+    this.activity.record('run.started', truncate(message.prompt));
+
     this.running.set(message.runId, run);
     void run.done
       .then(async (handle) => {
+        const kind =
+          handle.outcome === 'completed'
+            ? 'run.completed'
+            : handle.outcome === 'stopped'
+              ? 'run.stopped'
+              : 'run.failed';
+        this.activity.record(kind, `Run ${handle.outcome}`, truncate(message.prompt));
+
         // A run often changes the working tree; tell the phone what it looks
         // like now rather than leaving a stale snapshot on screen.
         this.broadcast({ type: 'project_changed', project: await this.projectNow() });
@@ -247,6 +277,15 @@ export class AxuneServer {
       .finally(() => this.running.delete(message.runId));
   }
 
+  /** Hand a freshly connected phone the backlog, and say how much is new. */
+  private sendActivity(socket: WebSocket, lastSeenAt: number | undefined): void {
+    this.send(socket, {
+      type: 'activity',
+      events: this.activity.recent(),
+      sinceLastVisit: this.activity.countSince(lastSeenAt),
+    });
+  }
+
   private send(socket: WebSocket, message: ServerMessage): void {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
   }
@@ -257,8 +296,19 @@ export class AxuneServer {
     }
   }
 
+  /** The activity stream, for the desktop's own display. */
+  get activityLog(): ActivityLog {
+    return this.activity;
+  }
+
   /** Convenience for callers that want a run id without importing crypto. */
   static newRunId(): string {
     return randomUUID();
   }
+}
+
+/** Prompts can be long; activity rows get one line. */
+function truncate(text: string, max = 90): string {
+  const line = text.replace(/\s+/g, ' ').trim();
+  return line.length > max ? `${line.slice(0, max)}…` : line;
 }

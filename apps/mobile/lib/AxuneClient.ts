@@ -1,4 +1,5 @@
 import type {
+  ActivityEvent,
   AgentEvent,
   AgentStatus,
   Capability,
@@ -27,6 +28,8 @@ export interface ClientCallbacks {
   onProject?: (project: ProjectSummary) => void;
   onAgents?: (agents: AgentStatus[]) => void;
   onMachine?: (machine: MachineSummary, capability: Capability) => void;
+  onActivity?: (events: ActivityEvent[], sinceLastVisit: number) => void;
+  onActivityEvent?: (event: ActivityEvent) => void;
 }
 
 export class AxuneClient {
@@ -39,7 +42,14 @@ export class AxuneClient {
   private reconnectAttempts = 0;
   private deliberateClose = false;
 
+  /** Epoch ms of this device's previous visit, sent so the desktop can diff. */
+  private lastSeenAt: number | undefined;
+
   constructor(private readonly callbacks: ClientCallbacks) {}
+
+  setLastSeenAt(at: number | undefined): void {
+    this.lastSeenAt = at;
+  }
 
   /**
    * Reconnect with a pairing saved from a previous launch, skipping the QR
@@ -58,6 +68,7 @@ export class AxuneClient {
         token: sessionToken,
         runId: this.activeRunId ?? 'none',
         lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
+        lastSeenAt: this.lastSeenAt,
       });
     });
   }
@@ -85,6 +96,7 @@ export class AxuneClient {
         token: payload.token,
         deviceName,
         protocolVersion: PROTOCOL_VERSION,
+        lastSeenAt: this.lastSeenAt,
       });
     });
   }
@@ -180,6 +192,14 @@ export class AxuneClient {
 
       case 'project_changed':
         this.callbacks.onProject?.(message.project);
+        return;
+
+      case 'activity':
+        this.callbacks.onActivity?.(message.events, message.sinceLastVisit);
+        return;
+
+      case 'activity_event':
+        this.callbacks.onActivityEvent?.(message.event);
         return;
 
       case 'machine_changed':

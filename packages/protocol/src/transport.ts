@@ -72,13 +72,20 @@ export interface AgentStatus {
 
 /** Phone → Desktop. */
 export type ClientMessage =
-  | { type: 'pair'; token: string; deviceName: string; protocolVersion: number }
+  | {
+      type: 'pair';
+      token: string;
+      deviceName: string;
+      protocolVersion: number;
+      /** Epoch ms of this device's previous visit, so the desktop can say what changed. */
+      lastSeenAt?: number;
+    }
   /**
    * Sent on reconnect. `lastSeq` is the highest sequence number the phone has
    * already seen for that run, so the desktop can replay only what was missed.
    * This is why every event carries `seq`.
    */
-  | { type: 'resume'; token: string; runId: string; lastSeq: number }
+  | { type: 'resume'; token: string; runId: string; lastSeq: number; lastSeenAt?: number }
   | { type: 'start_run'; runId: string; sessionId: string; prompt: string; agentIds: AgentId[]; mode: RunMode }
   | { type: 'stop_run'; runId: string }
   | { type: 'ping' };
@@ -107,7 +114,42 @@ export type ServerMessage =
   | { type: 'project_changed'; project: ProjectSummary }
   | { type: 'machine_changed'; machine: MachineSummary; capability: Capability }
   | { type: 'agents_changed'; agents: AgentStatus[] }
+  /** Backlog of what happened, newest last. `sinceLastVisit` is how many are new. */
+  | { type: 'activity'; events: ActivityEvent[]; sinceLastVisit: number }
+  /** A single event as it happens, while the phone is connected. */
+  | { type: 'activity_event'; event: ActivityEvent }
   | { type: 'pong' };
+
+/**
+ * Something that happened on the desktop while nobody was necessarily looking.
+ *
+ * One stream serves two features: "since you last checked" is this list
+ * filtered by the phone's last visit, and "recent activity" is the same list
+ * rendered chronologically. Building them as separate pipelines would mean two
+ * sources of truth for the same facts.
+ */
+export interface ActivityEvent {
+  id: string;
+  at: number;
+  kind: ActivityKind;
+  /** One line, already written for a human. */
+  summary: string;
+  /** Optional second line — a commit hash, a run outcome, a branch name. */
+  detail?: string;
+}
+
+export type ActivityKind =
+  | 'run.started'
+  | 'run.completed'
+  | 'run.stopped'
+  | 'run.failed'
+  | 'git.commit'
+  | 'git.branch'
+  | 'git.dirty'
+  | 'git.clean'
+  | 'git.pushed'
+  | 'device.paired'
+  | 'device.disconnected';
 
 /** What the desktop encodes into the pairing QR code. */
 export interface PairingPayload {

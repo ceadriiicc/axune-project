@@ -1,4 +1,5 @@
 import type {
+  ActivityEvent,
   AgentEvent,
   AgentStatus,
   Capability,
@@ -18,7 +19,13 @@ import React, {
 
 import { AxuneClient, type ConnectionState } from './AxuneClient';
 import { getSession, SESSIONS } from './fakeData';
-import { clearPairing, loadPairing, savePairing } from './pairingStore';
+import {
+  clearPairing,
+  loadLastSeenAt,
+  loadPairing,
+  savePairing,
+  saveLastSeenAt,
+} from './pairingStore';
 import type { Session, SessionMode } from './types';
 
 /**
@@ -80,6 +87,12 @@ interface WorkspaceState {
   machine: MachineSummary | null;
   capability: Capability;
   lastSeenAt: number | null;
+  /** Everything the desktop recorded, oldest first. */
+  activity: ActivityEvent[];
+  /** How many of those are newer than this device's previous visit. */
+  newSinceLastVisit: number;
+  /** Call when the user has actually seen Home, to reset the "since" mark. */
+  markChecked: () => void;
   live: LiveRun | null;
   history: RunSummary[];
   newConversation: () => void;
@@ -123,6 +136,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
   const [live, setLive] = useState<LiveRun | null>(null);
   const [history, setHistory] = useState<RunSummary[]>([]);
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [newSinceLastVisit, setNewSinceLastVisit] = useState(0);
 
   const clientRef = useRef<AxuneClient | null>(null);
   /**
@@ -229,6 +244,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setLastSeenAt(Date.now());
       },
       onAgents: (agentList) => setAgents(agentList),
+      onActivity: (events, sinceLastVisit) => {
+        setActivity(events);
+        setNewSinceLastVisit(sinceLastVisit);
+      },
+      onActivityEvent: (event) => {
+        setActivity((past) => [...past.slice(-80), event]);
+        setNewSinceLastVisit((count) => count + 1);
+      },
       onGap: (_runId, missed) => {
         setConnectionDetail(`caught up — replayed ${missed} events`);
       },
@@ -239,10 +262,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const pair = useCallback(
     (payload: PairingPayload) => {
       setLive(null);
-      ensureClient().pair(payload, DEVICE_NAME);
+      const client = ensureClient();
+      void loadLastSeenAt().then((at) => {
+        client.setLastSeenAt(at);
+        client.pair(payload, DEVICE_NAME);
+      });
     },
     [ensureClient],
   );
+
+  /**
+   * The user has now seen what changed, so the next visit measures from here.
+   * Deliberately not called on connect — that would clear the summary before it
+   * had a chance to be read.
+   */
+  const markChecked = useCallback(() => {
+    setNewSinceLastVisit(0);
+    void saveLastSeenAt(Date.now());
+  }, []);
 
   const disconnect = useCallback(() => {
     clientRef.current?.disconnect();
@@ -268,9 +305,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const stored = await loadPairing();
+      const [stored, seenAt] = await Promise.all([loadPairing(), loadLastSeenAt()]);
       if (cancelled || !stored) return;
-      ensureClient().reconnectWithSession(stored.url, stored.sessionToken);
+      const client = ensureClient();
+      client.setLastSeenAt(seenAt);
+      client.reconnectWithSession(stored.url, stored.sessionToken);
     })();
     return () => {
       cancelled = true;
@@ -316,6 +355,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       machine,
       capability,
       lastSeenAt,
+      activity,
+      newSinceLastVisit,
+      markChecked,
       live,
       history,
       newConversation,
@@ -336,6 +378,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       machine,
       capability,
       lastSeenAt,
+      activity,
+      newSinceLastVisit,
+      markChecked,
       live,
       history,
       newConversation,

@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveRun, formatDuration } from '@/components/ui/home/ActiveRun';
+import { RecentActivity, SinceLastChecked } from '@/components/ui/home/Activity';
 import { Alerts, collectAlerts } from '@/components/ui/home/Alerts';
 import { ago, RepoStatus } from '@/components/ui/home/RepoStatus';
 import { AGENTS } from '@/constants/agents';
@@ -33,6 +34,9 @@ export default function HomeScreen() {
     lastSeenAt,
     live,
     history,
+    activity,
+    newSinceLastVisit,
+    markChecked,
     newConversation,
     stopRun,
   } = useWorkspace();
@@ -42,6 +46,17 @@ export default function HomeScreen() {
   const git = project?.git;
   const running = live?.status === 'working' ? live : null;
   const lastRun = history[0];
+
+  /*
+   * Mark the visit only after the summary has had a moment on screen. Clearing
+   * it on mount would erase "what changed while you were away" in the instant
+   * before it could be read.
+   */
+  useEffect(() => {
+    if (newSinceLastVisit <= 0) return;
+    const timer = setTimeout(markChecked, 6000);
+    return () => clearTimeout(timer);
+  }, [newSinceLastVisit, markChecked]);
 
   const alerts = collectAlerts({
     connectionState,
@@ -153,6 +168,12 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
+        <SinceLastChecked
+          events={activity}
+          count={newSinceLastVisit}
+          lastCheckedAt={lastSeenAt}
+        />
+
         {/* State 4 — disconnected keeps showing the last known picture. */}
         {git ? <RepoStatus git={git} stale={!connected} /> : null}
 
@@ -209,6 +230,8 @@ export default function HomeScreen() {
             </View>
           </>
         ) : null}
+
+        <RecentActivity events={activity} />
 
         {connectionDetail && !connected ? (
           <Text style={styles.footnote}>{connectionDetail}</Text>

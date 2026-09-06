@@ -47,3 +47,30 @@ export async function clearPairing(): Promise<void> {
     // Nothing useful to do; the desktop can also revoke from its side.
   }
 }
+
+/**
+ * When this device last looked at Home.
+ *
+ * Kept beside the pairing rather than in the credential blob so that reading it
+ * never risks touching the token, and so clearing the pairing does not erase
+ * the sense of "what changed while I was away".
+ */
+const LAST_SEEN_KEY = 'axune.lastSeenAt.v1';
+
+export async function loadLastSeenAt(): Promise<number | undefined> {
+  try {
+    const raw = await SecureStore.getItemAsync(LAST_SEEN_KEY);
+    const value = raw ? Number(raw) : NaN;
+    return Number.isFinite(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveLastSeenAt(at: number): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(LAST_SEEN_KEY, String(at));
+  } catch {
+    // Losing this only means the next visit shows no "since" summary.
+  }
+}
