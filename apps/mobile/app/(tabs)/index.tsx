@@ -16,8 +16,10 @@ import { useWorkspace } from '@/lib/WorkspaceContext';
  */
 export default function HomeScreen() {
   const router = useRouter();
-  const { connectionState, connectionDetail, project, agents, history, newConversation } =
+  const { connectionState, connectionDetail, project, agents, history, live, newConversation } =
     useWorkspace();
+  const git = project?.git;
+  const runningNow = live?.status === 'working';
 
   const connected = connectionState === 'connected' || connectionState === 'reconnecting';
 
@@ -79,6 +81,49 @@ export default function HomeScreen() {
           )}
         </Pressable>
 
+        {runningNow ? (
+          <Pressable style={styles.running} onPress={() => router.push('/workspace')}>
+            <View style={[styles.dot, { backgroundColor: color.claude }]} />
+            <View style={styles.flex}>
+              <Text style={styles.runningTitle}>Claude Code is working</Text>
+              <Text style={styles.runningPrompt} numberOfLines={1}>
+                {live?.prompt}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color={color.claudeText} />
+          </Pressable>
+        ) : null}
+
+        {git ? (
+          <View style={styles.repo}>
+            <Text style={styles.repoLabel}>Where you left off</Text>
+            <Text style={styles.commit} numberOfLines={2}>
+              {git.lastCommitMessage}
+            </Text>
+            <Text style={styles.commitMeta}>
+              {git.lastCommitHash} · {relativeTime(git.lastCommitAt)} ago
+            </Text>
+
+            <View style={styles.factRow}>
+              <Fact
+                value={String(git.dirtyFiles)}
+                label={git.dirtyFiles === 1 ? 'uncommitted file' : 'uncommitted files'}
+                tone={git.dirtyFiles > 0 ? color.claude : color.textSoft}
+              />
+              {git.ahead !== null ? (
+                <Fact
+                  value={String(git.ahead)}
+                  label={git.ahead === 1 ? 'unpushed commit' : 'unpushed commits'}
+                  tone={git.ahead > 0 ? color.codex : color.textSoft}
+                />
+              ) : null}
+              {git.behind ? (
+                <Fact value={String(git.behind)} label="behind remote" tone={color.danger} />
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
         <Pressable style={styles.primary} onPress={startRun}>
           <Ionicons
             name={connected ? 'add' : 'qr-code-outline'}
@@ -119,6 +164,15 @@ export default function HomeScreen() {
         ) : null}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function Fact({ value, label, tone }: { value: string; label: string; tone: string }) {
+  return (
+    <View style={styles.fact}>
+      <Text style={[styles.factValue, { color: tone }]}>{value}</Text>
+      <Text style={styles.factLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -181,6 +235,40 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   agentName: { fontSize: 12, fontWeight: '600' },
+  running: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(216,173,123,0.3)',
+    backgroundColor: 'rgba(216,173,123,0.10)',
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  runningTitle: { color: color.claudeText, fontSize: 13, fontWeight: '600' },
+  runningPrompt: { color: color.textMuted, fontSize: 12, marginTop: 2 },
+  repo: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.line,
+    backgroundColor: color.surface,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  repoLabel: {
+    color: color.textSoft,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  commit: { color: color.text, fontSize: 14, fontWeight: '600', lineHeight: 19, marginTop: 6 },
+  commitMeta: { color: color.textSoft, fontSize: 12, marginTop: 3 },
+  factRow: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.md },
+  fact: { gap: 2 },
+  factValue: { fontSize: 19, fontWeight: '700' },
+  factLabel: { color: color.textMuted, fontSize: 11 },
   primary: {
     flexDirection: 'row',
     alignItems: 'center',

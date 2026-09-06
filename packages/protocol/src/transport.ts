@@ -14,6 +14,28 @@ export interface ProjectSummary {
   path: string;
   branch: string;
   isGitRepo: boolean;
+  /**
+   * The state of the work itself, not just the connection.
+   *
+   * This is the reason to open Axune when away from the desk: where did I get
+   * to, is anything uncommitted, is anything unpushed. Cheap to compute and
+   * refreshed whenever the phone asks.
+   */
+  git?: GitSnapshot;
+}
+
+export interface GitSnapshot {
+  /** Subject line of the most recent commit. */
+  lastCommitMessage: string;
+  /** Epoch ms of the most recent commit. */
+  lastCommitAt: number;
+  lastCommitHash: string;
+  /** Files with uncommitted modifications, staged or not. */
+  dirtyFiles: number;
+  /** Commits on this branch not yet pushed. Null when there is no upstream. */
+  ahead: number | null;
+  /** Commits on the upstream not yet merged locally. */
+  behind: number | null;
 }
 
 export interface AgentStatus {

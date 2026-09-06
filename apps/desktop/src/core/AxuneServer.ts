@@ -11,6 +11,7 @@ import {
 } from '@axune/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
 
+import { readGitSnapshot } from './gitSnapshot';
 import { PairingManager } from './PairingManager';
 import { RunRegistry } from './RunRegistry';
 import { SessionStore } from './SessionStore';
@@ -84,6 +85,15 @@ export class AxuneServer {
     this.broadcast({ type: 'project_changed', project });
   }
 
+  /**
+   * The project with a freshly read git snapshot. Read on demand rather than
+   * cached, since the whole point is that it is current when the phone looks.
+   */
+  private async projectNow(): Promise<ProjectSummary> {
+    if (!this.project.isGitRepo) return this.project;
+    return { ...this.project, git: await readGitSnapshot(this.project.path) };
+  }
+
   async agentStatuses(): Promise<AgentStatus[]> {
     const detection = await this.claude.detect();
     return [
@@ -123,7 +133,7 @@ export class AxuneServer {
       return this.send(socket, {
         type: 'paired',
         sessionToken: result.sessionToken,
-        project: this.project,
+        project: await this.projectNow(),
         agents: await this.agentStatuses(),
         protocolVersion: PROTOCOL_VERSION,
       });
@@ -154,7 +164,7 @@ export class AxuneServer {
 
       // A resumed device knows its token but not what the desktop is pointed
       // at — the project may have changed while it was away.
-      this.send(socket, { type: 'project_changed', project: this.project });
+      this.send(socket, { type: 'project_changed', project: await this.projectNow() });
       this.send(socket, { type: 'agents_changed', agents: await this.agentStatuses() });
       return;
     }
@@ -202,7 +212,10 @@ export class AxuneServer {
 
     this.running.set(message.runId, run);
     void run.done
-      .then((handle) => {
+      .then(async (handle) => {
+        // A run often changes the working tree; tell the phone what it looks
+        // like now rather than leaving a stale snapshot on screen.
+        this.broadcast({ type: 'project_changed', project: await this.projectNow() });
         if (handle.providerSessionId) {
           this.store.rememberProviderSession(
             message.sessionId,
