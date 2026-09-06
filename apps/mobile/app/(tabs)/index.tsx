@@ -103,6 +103,9 @@ export default function HomeScreen() {
                   ? `Offline · last seen ${ago(lastSeenAt)}`
                   : 'Offline'}
             </Text>
+            {/* Without this the row is tappable and looks inert, which is the
+                same as not being tappable at all. */}
+            <Ionicons name="chevron-forward" size={13} color={color.textSoft} />
           </Pressable>
         </View>
 
@@ -166,6 +169,28 @@ export default function HomeScreen() {
               </Pressable>
             ) : null}
           </View>
+        ) : null}
+
+        {/*
+          Paired but offline: without this Home renders a header and nothing
+          else, because every card below needs a project the desktop is not
+          around to describe. There must always be a visible way back.
+        */}
+        {!connected ? (
+          <Pressable style={styles.reconnect} onPress={() => router.push('/pair')}>
+            <Ionicons name="qr-code-outline" size={16} color={color.claude} />
+            <View style={styles.flex}>
+              <Text style={styles.reconnectTitle}>
+                {lastSeenAt ? 'Desktop unreachable' : 'Not paired'}
+              </Text>
+              <Text style={styles.reconnectBody}>
+                {lastSeenAt
+                  ? 'Start Axune Desktop, or scan a new code if it moved network.'
+                  : 'Scan the code shown by Axune Desktop.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color={color.textSoft} />
+          </Pressable>
         ) : null}
 
         <SinceLastChecked
@@ -276,6 +301,20 @@ const styles = StyleSheet.create({
   dot: { width: 7, height: 7, borderRadius: 4 },
   machineName: { color: color.textMuted, fontSize: 13, fontWeight: '600' },
   machineState: { color: color.textSoft, fontSize: 13 },
+  reconnect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(216,173,123,0.28)',
+    backgroundColor: 'rgba(216,173,123,0.07)',
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  flex: { flex: 1 },
+  reconnectTitle: { color: color.text, fontSize: 14, fontWeight: '600' },
+  reconnectBody: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
 
   projectCard: {
     borderRadius: radius.lg,
