@@ -8,3 +8,7 @@ npm-debug.log*
 .env
 .env.local
 *.tsbuildinfo
+
+# Electron build output
+apps/desktop/dist/
+apps/desktop/renderer/renderer.js

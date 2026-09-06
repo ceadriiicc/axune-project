@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:;" />
+    <title>Axune</title>
+    <style>
+      /* Same tokens as the phone, so the two halves look like one product. */
+      :root {
+        --bg: #11161d;
+        --surface: rgba(255, 255, 255, 0.035);
+        --line: rgba(255, 255, 255, 0.08);
+        --text: #f7f9fb;
+        --muted: #b0bbc8;
+        --soft: #7e8b9b;
+        --claude: #d8ad7b;
+        --codex: #6eb8bb;
+        --ok: #7ac099;
+        --danger: #cc7c7c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 18px;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+      }
+      h1 { font-size: 16px; margin: 0 0 2px; letter-spacing: -0.3px; }
+      .sub { color: var(--soft); font-size: 11.5px; }
+      .card {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 12px;
+      }
+      .row { display: flex; align-items: center; gap: 8px; }
+      .grow { flex: 1; min-width: 0; }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--soft); flex: none; }
+      .dot.on { background: var(--ok); }
+      .dot.busy { background: var(--claude); }
+      .project { font-size: 15px; font-weight: 650; }
+      .branch { color: var(--muted); font-size: 12px; }
+      button {
+        font: inherit;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      button:hover { border-color: rgba(255, 255, 255, 0.2); color: var(--text); }
+      button.primary { background: var(--claude); border-color: transparent; color: #1e1b18; font-weight: 650; }
+      .label {
+        color: var(--soft);
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        font-weight: 650;
+      }
+      #qr {
+        font-family: Consolas, Menlo, monospace;
+        font-size: 7px;
+        line-height: 7px;
+        letter-spacing: 0;
+        white-space: pre;
+        text-align: center;
+        margin: 10px 0 6px;
+        color: var(--text);
+      }
+      .agent { display: flex; align-items: center; gap: 7px; margin-top: 8px; font-size: 12px; }
+      .agent .name { color: var(--claude); font-weight: 600; }
+      .agent .state { color: var(--soft); font-size: 11px; }
+      #feed { max-height: 200px; overflow-y: auto; margin-top: 6px; }
+      .line { display: flex; gap: 8px; padding: 3px 0; font-size: 11.5px; color: var(--muted); }
+      .line .time { color: var(--soft); font-variant-numeric: tabular-nums; flex: none; }
+      .line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .stream {
+        margin-top: 8px;
+        padding: 8px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.25);
+        font-size: 11.5px;
+        color: var(--muted);
+        max-height: 150px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        user-select: text;
+      }
+      .hint { color: var(--soft); font-size: 11px; margin-top: 8px; }
+      .empty { color: var(--soft); font-size: 12px; padding: 6px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <div class="grow">
+        <h1>Axune</h1>
+        <div class="sub" id="address">starting…</div>
+      </div>
+      <div class="dot" id="link"></div>
+      <span class="sub" id="linkText">no phone</span>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="grow">
+          <div class="project" id="project">—</div>
+          <div class="branch" id="branch"></div>
+        </div>
+        <button id="choose">Change…</button>
+      </div>
+      <div id="agents"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span class="label grow">Pair a phone</span>
+        <button id="refresh">New code</button>
+      </div>
+      <div id="qr">…</div>
+      <div class="sub" id="expiry"></div>
+    </div>
+
+    <div class="card">
+      <span class="label">Activity</span>
+      <div id="feed"><div class="empty">Nothing yet.</div></div>
+      <div class="stream" id="stream" hidden></div>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

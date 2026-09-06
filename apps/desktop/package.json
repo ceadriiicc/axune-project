@@ -3,24 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "src/main.ts",
+  "main": "dist/main.cjs",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "serve": "tsx src/serve.ts",
     "try": "tsx src/tryTransport.ts",
     "try:continuity": "tsx src/tryContinuity.ts",
-    "try:write": "tsx src/tryWrite.ts"
+    "try:write": "tsx src/tryWrite.ts",
+    "build": "node build.mjs",
+    "app": "node build.mjs && electron ."
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",
+    "@axune/git-core": "file:../../packages/git-core",
     "@axune/protocol": "file:../../packages/protocol",
     "qrcode-terminal": "^0.12.0",
-    "ws": "^8.18.0",
-    "@axune/git-core": "file:../../packages/git-core"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/ws": "^8.5.13",
+    "electron": "^44.2.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "~6.0.3"
   }
