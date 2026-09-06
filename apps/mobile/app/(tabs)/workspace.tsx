@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -9,197 +9,325 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
-import { AgentPanel } from '@/components/ui/AgentPanel';
-import { LiveRunPanel } from '@/components/ui/LiveRunPanel';
-import { Composer } from '@/components/ui/Composer';
-import { ToggleRow } from '@/components/ui/ToggleRow';
-import { TopBar } from '@/components/ui/TopBar';
+import { AgentText } from '@/components/ui/AgentText';
+import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { AGENTS } from '@/constants/agents';
 import { color, radius, spacing } from '@/constants/theme';
-import { useWorkspace } from '@/lib/WorkspaceContext';
+import { useWorkspace, type LiveRun } from '@/lib/WorkspaceContext';
+
+/**
+ * The conversation with the agents working on this project.
+ *
+ * Laid out as a thread of turns rather than one answer, because the desktop
+ * resumes the agent's own session between prompts — showing only the latest
+ * exchange would display less than the agent itself remembers.
+ *
+ * Each turn renders a row of agent panels. Today that row has one panel; with
+ * Codex it has two, and nothing here needs to change for that to work.
+ */
+const SUGGESTIONS = [
+  'What changed on this branch?',
+  'Summarise what this project does.',
+  'Where is authentication handled?',
+  'Why might the build be failing?',
+];
 
 export default function WorkspaceScreen() {
   const router = useRouter();
   const {
-    session,
-    paired,
-    setPaired,
-    sendPrompt,
-    live,
-    project,
     connectionState,
-    connectionDetail,
+    project,
+    conversation,
+    live,
+    sendPrompt,
+    newConversation,
     stopRun,
   } = useWorkspace();
 
-  const visibleTurns = paired ? session.turns : session.turns.slice(0, 1);
+  const [draft, setDraft] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const connected = connectionState === 'connected' || connectionState === 'reconnecting';
+
+  // Follow the stream as it arrives, the way a terminal would.
+  const lastText = conversation[conversation.length - 1]?.text.length ?? 0;
+  useEffect(() => {
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+    return () => clearTimeout(timer);
+  }, [lastText, conversation.length]);
+
+  const ask = (prompt: string) => {
+    const text = prompt.trim();
+    if (!text) return;
+    if (!connected) return router.push('/pair');
+    sendPrompt(text);
+    setDraft('');
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={80}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <TopBar
-            eyebrow={
-              connected && project
-                ? `${project.name} • ${project.branch}`
-                : `${session.project} • ${session.branch}`
-            }
-            title={connected ? 'Live session' : session.title}
-            onBack={() => router.push('/')}
-            onMore={() => router.push('/pair')}
-          />
-
-          {connectionState !== 'idle' ? (
-            <View style={styles.connBar}>
-              <Text style={styles.connText}>
-                {connectionState === 'connected' ? 'Connected to desktop' : connectionState}
-                {connectionDetail ? ` · ${connectionDetail}` : ''}
-              </Text>
-            </View>
+        <View style={styles.header}>
+          <View style={styles.flex}>
+            <Text style={styles.title} numberOfLines={1}>
+              {project?.name ?? 'Workspace'}
+            </Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {connected ? project?.branch ?? '' : 'Not connected'}
+            </Text>
+          </View>
+          {conversation.length > 0 ? (
+            <Pressable style={styles.headerButton} onPress={newConversation} hitSlop={8}>
+              <Ionicons name="create-outline" size={18} color={color.textMuted} />
+            </Pressable>
           ) : null}
+        </View>
 
-          {connected && live ? (
-            <LiveRunPanel run={live} onStop={stopRun} />
-          ) : (
-            <>
-              <ToggleRow label="Paired mode" value={paired} onValueChange={setPaired} />
-              <View style={styles.cols}>
-                {visibleTurns.map((turn) => (
-                  <AgentPanel key={turn.agentId} turn={turn} prompt={session.prompt} />
-                ))}
-              </View>
-            </>
-          )}
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.thread}
+          keyboardShouldPersistTaps="handled"
+        >
+          {conversation.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>
+                {connected ? 'Ask about this project' : 'Pair to start'}
+              </Text>
+              <Text style={styles.emptyBody}>
+                {connected
+                  ? 'Claude Code reads the repository on your machine and answers here. It cannot change anything yet.'
+                  : 'Scan the code shown by Axune Desktop to connect this phone.'}
+              </Text>
 
-          <View style={styles.actions}>
-            <Pressable style={styles.action} onPress={() => router.push('/insights')}>
-              <Ionicons name="git-compare-outline" size={16} color={color.text} />
-              <Text style={styles.actionLabel}>Compare</Text>
-            </Pressable>
-            <Pressable style={styles.action}>
-              <Ionicons name="copy-outline" size={16} color={color.text} />
-              <Text style={styles.actionLabel}>Copy both</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.agentStatus}>
-            {session.turns.map((turn) => {
-              const agent = AGENTS[turn.agentId];
-              const active = visibleTurns.some((t) => t.agentId === turn.agentId);
-              return (
-                <View key={turn.agentId} style={styles.statusPill}>
-                  <View
-                    style={[
-                      styles.dot,
-                      { backgroundColor: active ? agent.accent : color.textSoft },
-                    ]}
-                  />
-                  <Text style={styles.statusText}>
-                    {agent.name} · {active ? 'ready' : 'idle'}
-                  </Text>
+              {connected ? (
+                <View style={styles.suggestions}>
+                  {SUGGESTIONS.map((suggestion) => (
+                    <Pressable
+                      key={suggestion}
+                      style={styles.suggestion}
+                      onPress={() => ask(suggestion)}
+                    >
+                      <Text style={styles.suggestionText}>{suggestion}</Text>
+                    </Pressable>
+                  ))}
                 </View>
-              );
-            })}
-          </View>
+              ) : (
+                <Pressable style={styles.pairButton} onPress={() => router.push('/pair')}>
+                  <Ionicons name="qr-code-outline" size={16} color="#1e1b18" />
+                  <Text style={styles.pairText}>Scan QR code</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : (
+            conversation.map((run) => <Turn key={run.runId} run={run} onStop={stopRun} />)
+          )}
         </ScrollView>
 
-        <View style={styles.composerWrap}>
-          <Composer
-            placeholder={paired ? 'Ask both coding agents...' : `Ask ${AGENTS.claude.name}...`}
-            initialValue={session.prompt}
-            onSend={sendPrompt}
+        <View style={styles.composer}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder={live ? 'Claude Code is working…' : 'Ask about your project…'}
+            placeholderTextColor={color.textSoft}
+            multiline
+            editable={connected}
           />
+          <Pressable
+            style={[styles.send, !draft.trim() && styles.sendIdle]}
+            onPress={() => ask(draft)}
+          >
+            <Ionicons name="arrow-up" size={18} color={draft.trim() ? '#0f1b1c' : color.textSoft} />
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+/**
+ * One exchange: what was asked, and what each agent said back.
+ *
+ * The panels sit in a row so a second agent needs no layout change — with two,
+ * each takes half the width and the comparison is side by side.
+ */
+function Turn({ run, onStop }: { run: LiveRun; onStop: () => void }) {
+  return (
+    <View style={styles.turn}>
+      <View style={styles.promptBubble}>
+        <Text style={styles.promptText}>{run.prompt}</Text>
+      </View>
+
+      <View style={styles.panels}>
+        <AgentPanel run={run} onStop={onStop} />
+      </View>
+    </View>
+  );
+}
+
+function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
+  const agent = AGENTS.claude;
+  const working = run.status === 'working';
+  const lastTool = [...run.activity].reverse().find((line) => line.ok === null);
+
+  return (
+    <View style={[styles.panel, { borderColor: `${agent.accent}33` }]}>
+      <View style={styles.panelHead}>
+        <Text style={[styles.panelAgent, { color: agent.accentText }]}>
+          {agent.glyph} {agent.name}
+        </Text>
+        <View style={styles.flex} />
+        <Text style={styles.panelStatus}>{statusLabel(run)}</Text>
+      </View>
+
+      {working && lastTool ? (
+        <Text style={styles.doing} numberOfLines={1}>
+          {lastTool.label}
+          {lastTool.detail ? ` · ${lastTool.detail}` : ''}
+        </Text>
+      ) : null}
+
+      {run.text ? (
+        <View style={[styles.answer, { backgroundColor: agent.bubbleBg }]}>
+          <AgentText text={run.text} style={{ color: agent.bubbleText }} />
+        </View>
+      ) : working ? (
+        <Text style={styles.thinking}>Working…</Text>
+      ) : null}
+
+      {working ? (
+        <Pressable style={styles.stop} onPress={onStop} hitSlop={6}>
+          <Ionicons name="stop-circle-outline" size={15} color={color.danger} />
+          <Text style={styles.stopText}>Stop</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function statusLabel(run: LiveRun): string {
+  if (run.status === 'working') {
+    return run.startedAt ? formatDuration(Date.now() - run.startedAt) : 'working';
+  }
+  if (run.status === 'finished') return 'completed';
+  if (run.status === 'stopped') return 'stopped';
+  return 'failed';
+}
+
 const styles = StyleSheet.create({
-  connBar: {
-    borderRadius: 12,
+  safe: { flex: 1, backgroundColor: color.bg },
+  flex: { flex: 1 },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  title: { color: color.text, fontSize: 18, fontWeight: '700' },
+  subtitle: { color: color.textSoft, fontSize: 12, marginTop: 2 },
+  headerButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'rgba(110,184,187,0.25)',
-    backgroundColor: 'rgba(110,184,187,0.10)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 12,
+    borderColor: color.line,
   },
-  connText: { color: '#b7edf0', fontSize: 12 },
-  safe: {
-    flex: 1,
-    backgroundColor: color.bg,
-  },
-  flex: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  cols: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    alignItems: 'stretch',
-    minHeight: 380,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  action: {
-    flex: 1,
+
+  thread: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.lg },
+
+  empty: { paddingTop: spacing.xl * 2, gap: spacing.sm },
+  emptyTitle: { color: color.text, fontSize: 17, fontWeight: '600' },
+  emptyBody: { color: color.textMuted, fontSize: 13, lineHeight: 19 },
+  suggestions: { gap: spacing.sm, marginTop: spacing.md },
+  suggestion: {
     borderWidth: 1,
     borderColor: color.line,
     backgroundColor: color.surface,
     borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+  },
+  suggestionText: { color: color.textMuted, fontSize: 14 },
+  pairButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  actionLabel: {
-    color: color.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  agentStatus: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+    gap: 8,
+    backgroundColor: color.claude,
+    borderRadius: radius.md,
+    paddingVertical: 13,
     marginTop: spacing.md,
   },
-  statusPill: {
+  pairText: { color: '#1e1b18', fontSize: 14, fontWeight: '700' },
+
+  turn: { gap: spacing.sm },
+  promptBubble: {
+    alignSelf: 'flex-end',
+    maxWidth: '88%',
+    backgroundColor: '#303842',
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+  },
+  promptText: { color: color.text, fontSize: 14, lineHeight: 20 },
+
+  panels: { flexDirection: 'row', gap: spacing.sm },
+  panel: {
+    flex: 1,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    backgroundColor: color.surface,
+    padding: spacing.sm + 2,
+    gap: spacing.sm,
+  },
+  panelHead: { flexDirection: 'row', alignItems: 'center' },
+  panelAgent: { fontSize: 13, fontWeight: '700' },
+  panelStatus: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
+  doing: { color: color.claudeText, fontSize: 11.5 },
+  thinking: { color: color.textSoft, fontSize: 13, fontStyle: 'italic' },
+  answer: { borderRadius: radius.sm, padding: spacing.sm },
+  stop: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+  stopText: { color: color.danger, fontSize: 12, fontWeight: '600' },
+
+  composer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.sm,
-    borderRadius: 999,
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: color.line,
     backgroundColor: color.surface,
   },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
+  input: {
+    flex: 1,
+    color: color.text,
+    fontSize: 15,
+    lineHeight: 21,
+    maxHeight: 120,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
   },
-  statusText: {
-    color: color.textMuted,
-    fontSize: 12,
+  send: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.sm,
+    backgroundColor: color.codex,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  composerWrap: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    backgroundColor: color.bg,
-  },
+  sendIdle: { backgroundColor: 'rgba(255,255,255,0.06)' },
 });

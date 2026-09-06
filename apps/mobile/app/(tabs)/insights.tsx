@@ -1,139 +1,98 @@
-import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { InsightRow } from '@/components/ui/InsightRow';
-import { TopBar } from '@/components/ui/TopBar';
 import { AGENTS } from '@/constants/agents';
 import { color, radius, spacing } from '@/constants/theme';
-import { fakeInsights } from '@/lib/fakeData';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
+/**
+ * Comparison between agents — the point of the product, and not yet possible.
+ *
+ * This screen deliberately shows nothing invented. Filling it with a mocked
+ * comparison would be the most misleading thing in the app: it would claim the
+ * differentiating feature works when no second agent exists to disagree with
+ * the first.
+ */
 export default function InsightsScreen() {
-  const router = useRouter();
-  const { session } = useWorkspace();
-  const insights = fakeInsights(session);
+  const { agents, history } = useWorkspace();
+  const connectedAgents = agents.filter((agent) => agent.installed);
+  const enough = connectedAgents.length >= 2;
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.content}>
-        <TopBar title="Insights" onBack={() => router.push('/workspace')} onMore={() => {}} />
+        <Text style={styles.title}>Insights</Text>
+        <Text style={styles.subtitle}>
+          Where two agents agree, where they differ, and what to do about it.
+        </Text>
 
-        <View style={styles.stack}>
-          <InsightRow
-            glyph="✓"
-            iconBg={color.codexIconBg}
-            iconFg={color.codexIconText}
-            title="Agreements"
-            body={insights.agreements}
-          />
-          <InsightRow
-            glyph={AGENTS.claude.glyph}
-            iconBg={color.claudeIconBg}
-            iconFg={color.claudeIconText}
-            title="Claude adds"
-            body={insights.claudeAdds}
-          />
-          <InsightRow
-            glyph={AGENTS.codex.glyph}
-            iconBg={color.codexIconBg}
-            iconFg={color.codexIconText}
-            title="Codex adds"
-            body={insights.codexAdds}
-          />
-          <InsightRow
-            glyph="⚑"
-            iconBg={color.purpleIconBg}
-            iconFg={color.purpleIconText}
-            title="Recommended next step"
-            body={insights.recommendation}
-          />
-        </View>
+        {!enough ? (
+          <View style={styles.card}>
+            <Ionicons name="git-compare-outline" size={22} color={color.textSoft} />
+            <Text style={styles.cardTitle}>Needs a second agent</Text>
+            <Text style={styles.cardBody}>
+              Comparison starts when two agents answer the same prompt independently. Right now only{' '}
+              {connectedAgents.length === 1
+                ? `${AGENTS.claude.name} is connected`
+                : 'no agent is connected'}
+              .
+            </Text>
 
-        <View style={styles.ctaRow}>
-          <Pressable style={[styles.cta, styles.ctaClaude]}>
-            <Text style={styles.ctaLabel}>{AGENTS.claude.glyph} Use Claude</Text>
-          </Pressable>
-          <Pressable style={[styles.cta, styles.ctaCodex]}>
-            <Text style={styles.ctaLabel}>{AGENTS.codex.glyph} Use Codex</Text>
-          </Pressable>
-          <Pressable style={styles.cta}>
-            <Text style={styles.ctaLabel}>⟗ Combine</Text>
-          </Pressable>
-        </View>
+            <View style={styles.agentList}>
+              <AgentRow name={AGENTS.claude.name} ready={connectedAgents.length > 0} />
+              <AgentRow name={AGENTS.codex.name} ready={false} note="not yet supported" />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Nothing to compare yet</Text>
+            <Text style={styles.cardBody}>
+              Send one prompt to both agents from Workspace, and their answers will be compared here.
+            </Text>
+          </View>
+        )}
 
-        <View style={styles.banner}>
-          <Text style={styles.bannerIcon}>⚖</Text>
-          <Text style={styles.bannerText}>
-            Axune helps you compare multiple coding agents quickly so you can choose, combine, or
-            orchestrate the best approach.
+        {history.length > 0 ? (
+          <Text style={styles.footnote}>
+            {history.length} run{history.length === 1 ? '' : 's'} so far, all from a single agent.
           </Text>
-        </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function AgentRow({ name, ready, note }: { name: string; ready: boolean; note?: string }) {
+  return (
+    <View style={styles.agentRow}>
+      <View style={[styles.dot, { backgroundColor: ready ? color.ok : color.textSoft }]} />
+      <Text style={styles.agentName}>{name}</Text>
+      <Text style={styles.agentNote}>{note ?? (ready ? 'Ready' : 'Not installed')}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: color.bg,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl * 2,
-  },
-  stack: {
-    gap: spacing.sm,
-  },
-  ctaRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  cta: {
-    flex: 1,
+  safe: { flex: 1, backgroundColor: color.bg },
+  content: { padding: spacing.lg },
+  title: { color: color.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  subtitle: { color: color.textMuted, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  card: {
+    marginTop: spacing.lg,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: color.line,
     backgroundColor: color.surface,
-    borderRadius: radius.md,
-    paddingVertical: 13,
-    paddingHorizontal: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaClaude: {
-    backgroundColor: '#7b5a3d',
-    borderColor: 'rgba(216,173,123,0.18)',
-  },
-  ctaCodex: {
-    backgroundColor: '#36595d',
-    borderColor: 'rgba(110,184,187,0.18)',
-  },
-  ctaLabel: {
-    color: color.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  banner: {
-    marginTop: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.line,
     padding: spacing.lg,
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'center',
+    gap: spacing.sm,
   },
-  bannerIcon: {
-    fontSize: 24,
-    color: color.info,
-  },
-  bannerText: {
-    flex: 1,
-    color: '#d4dce5',
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  cardTitle: { color: color.text, fontSize: 16, fontWeight: '600' },
+  cardBody: { color: color.textMuted, fontSize: 13, lineHeight: 19 },
+  agentList: { marginTop: spacing.sm, gap: spacing.sm },
+  agentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  agentName: { color: color.textMuted, fontSize: 13, flex: 1 },
+  agentNote: { color: color.textSoft, fontSize: 12 },
+  footnote: { color: color.textSoft, fontSize: 12, marginTop: spacing.lg },
 });

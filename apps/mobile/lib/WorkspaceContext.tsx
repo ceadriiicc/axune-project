@@ -18,7 +18,6 @@ import React, {
 } from 'react';
 
 import { AxuneClient, type ConnectionState } from './AxuneClient';
-import { getSession, SESSIONS } from './fakeData';
 import {
   clearPairing,
   loadLastSeenAt,
@@ -26,42 +25,25 @@ import {
   savePairing,
   saveLastSeenAt,
 } from './pairingStore';
-import type { Session, SessionMode } from './types';
 
 /**
- * Holds both the demo sessions and, once paired, a live run from the desktop.
+ * All state the phone holds about the desktop it is driving.
  *
- * The fake sessions stay for now so the app is still explorable with no desktop
- * running. `live` is what a paired phone actually shows, and it is built purely
- * from agent events — the app never parses provider output.
+ * Everything here is built from agent events and transport messages — nothing
+ * parses provider output, which is what lets a second agent slot in without
+ * touching any screen.
  */
 export interface LiveRun {
   runId: string;
   prompt: string;
   /** Streamed assistant text, accumulated from message_delta. */
   text: string;
-  /** Tool activity, newest last. */
   activity: ActivityLine[];
-  status: 'idle' | 'working' | 'finished' | 'stopped' | 'failed';
+  status: 'working' | 'finished' | 'stopped' | 'failed';
   outcome: string | null;
-  /** True while replayed events are being applied after a reconnect. */
-  caughtUp: boolean;
   /** For elapsed time, and for spotting a run that has gone quiet. */
   startedAt: number | null;
   lastEventAt: number | null;
-}
-
-/** A run that actually happened, kept so Home and Sessions can show real history. */
-export interface RunSummary {
-  runId: string;
-  prompt: string;
-  startedAt: number;
-  finishedAt: number;
-  outcome: 'completed' | 'stopped' | 'failed';
-  /** First line of the answer, for the list row. */
-  excerpt: string;
-  filesRead: number;
-  commands: number;
 }
 
 export interface ActivityLine {
@@ -72,14 +54,19 @@ export interface ActivityLine {
   detail?: string;
 }
 
-interface WorkspaceState {
-  session: Session;
-  paired: boolean;
-  loadSession: (id: string) => void;
-  setPaired: (paired: boolean) => void;
-  sendPrompt: (prompt: string) => void;
+/** A finished run, kept so Home and Sessions can show real history. */
+export interface RunSummary {
+  runId: string;
+  prompt: string;
+  startedAt: number;
+  finishedAt: number;
+  outcome: 'completed' | 'stopped' | 'failed';
+  excerpt: string;
+  filesRead: number;
+  commands: number;
+}
 
-  // Live connection
+interface WorkspaceState {
   connectionState: ConnectionState;
   connectionDetail: string | null;
   project: ProjectSummary | null;
@@ -87,14 +74,24 @@ interface WorkspaceState {
   machine: MachineSummary | null;
   capability: Capability;
   lastSeenAt: number | null;
-  /** Everything the desktop recorded, oldest first. */
-  activity: ActivityEvent[];
-  /** How many of those are newer than this device's previous visit. */
-  newSinceLastVisit: number;
-  /** Call when the user has actually seen Home, to reset the "since" mark. */
-  markChecked: () => void;
+
+  /**
+   * Every run in the current conversation, oldest first.
+   *
+   * A session is a thread, not a single question. The desktop resumes the
+   * agent's own session between prompts, so discarding the previous exchange
+   * would show the user less than the agent itself remembers.
+   */
+  conversation: LiveRun[];
+  /** The run currently working, if any. */
   live: LiveRun | null;
   history: RunSummary[];
+
+  activity: ActivityEvent[];
+  newSinceLastVisit: number;
+  markChecked: () => void;
+
+  sendPrompt: (prompt: string) => void;
   newConversation: () => void;
   pair: (payload: PairingPayload) => void;
   disconnect: () => void;
@@ -106,10 +103,6 @@ const WorkspaceContext = createContext<WorkspaceState | null>(null);
 /** Shown on the desktop as the name of the trusted device. */
 const DEVICE_NAME = 'iPhone';
 
-function modeToPaired(mode: SessionMode): boolean {
-  return mode === 'paired';
-}
-
 const emptyRun = (runId: string, prompt: string): LiveRun => ({
   runId,
   prompt,
@@ -117,96 +110,48 @@ const emptyRun = (runId: string, prompt: string): LiveRun => ({
   activity: [],
   status: 'working',
   outcome: null,
-  caughtUp: true,
   startedAt: Date.now(),
   lastEventAt: Date.now(),
 });
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session>(SESSIONS[0]);
-  const [paired, setPairedState] = useState(modeToPaired(SESSIONS[0].mode));
-
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [machine, setMachine] = useState<MachineSummary | null>(null);
   const [capability, setCapability] = useState<Capability>('read-only');
-  /** When the desktop was last heard from, so a disconnected Home can say so. */
   const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
-  const [live, setLive] = useState<LiveRun | null>(null);
+
+  const [conversation, setConversation] = useState<LiveRun[]>([]);
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [newSinceLastVisit, setNewSinceLastVisit] = useState(0);
 
   const clientRef = useRef<AxuneClient | null>(null);
   /**
-   * One conversation id for the whole live session, NOT one per prompt.
-   * The desktop keys Claude Code's resumable session off this, so a fresh id
-   * each time would silently start a new conversation every message — the exact
-   * bug this was meant to fix.
+   * One conversation id for the whole thread, NOT one per prompt. The desktop
+   * keys the agent's resumable session off this, so a fresh id each time would
+   * silently start a new conversation every message.
    */
   const conversationIdRef = useRef<string>(randomId());
 
   const applyEvent = useCallback((event: AgentEvent) => {
-    setLive((current) => {
-      const base = current?.runId === event.runId ? current : emptyRun(event.runId, '');
-      const run = { ...base, lastEventAt: Date.now() };
-      switch (event.type) {
-        case 'run_started':
-          return { ...run, prompt: event.prompt, status: 'working', startedAt: Date.now() };
-        case 'message_delta':
-          return { ...run, text: run.text + event.text };
-        case 'tool_started':
-          return {
-            ...run,
-            activity: [
-              ...run.activity,
-              {
-                id: `${event.seq}`,
-                label: event.toolName,
-                ok: null,
-                detail: shortDetail(event.input),
-              },
-            ],
-          };
-        case 'tool_finished':
-          return {
-            ...run,
-            activity: [
-              ...run.activity,
-              { id: `${event.seq}`, label: event.ok ? 'done' : 'denied', ok: event.ok },
-            ],
-          };
-        case 'run_finished':
-          setHistory((past) => [
-            {
-              runId: run.runId,
-              prompt: run.prompt,
-              startedAt: run.startedAt ?? Date.now(),
-              finishedAt: Date.now(),
-              outcome: event.outcome,
-              excerpt: firstLine(run.text),
-              filesRead: run.activity.filter((a) => a.label === 'Read').length,
-              commands: run.activity.filter((a) => a.label === 'Bash').length,
-            },
-            ...past.filter((entry) => entry.runId !== run.runId),
-          ]);
-          return {
-            ...run,
-            status:
-              event.outcome === 'completed'
-                ? 'finished'
-                : event.outcome === 'stopped'
-                  ? 'stopped'
-                  : 'failed',
-            outcome: event.outcome,
-          };
-        case 'error':
-          return { ...run, status: 'failed', outcome: event.message };
-        default:
-          return run;
+    setConversation((current) => {
+      const index = current.findIndex((entry) => entry.runId === event.runId);
+      const previous = index >= 0 ? current[index]! : emptyRun(event.runId, '');
+      const updated = reduceRun({ ...previous, lastEventAt: Date.now() }, event);
+
+      if (updated.status !== 'working' && previous.status === 'working') {
+        setHistory((past) => [summarise(updated), ...past.filter((e) => e.runId !== updated.runId)]);
       }
+
+      if (index >= 0) {
+        const next = [...current];
+        next[index] = updated;
+        return next;
+      }
+      return [...current, updated];
     });
   }, []);
 
@@ -217,7 +162,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setConnectionState(state);
         setConnectionDetail(detail ?? null);
       },
-      onEvent: (event) => applyEvent(event),
+      onEvent: applyEvent,
       onPaired: (proj, agentList) => {
         setProject(proj);
         setAgents(agentList);
@@ -243,7 +188,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setCapability(cap);
         setLastSeenAt(Date.now());
       },
-      onAgents: (agentList) => setAgents(agentList),
+      onAgents: setAgents,
       onActivity: (events, sinceLastVisit) => {
         setActivity(events);
         setNewSinceLastVisit(sinceLastVisit);
@@ -252,16 +197,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setActivity((past) => [...past.slice(-80), event]);
         setNewSinceLastVisit((count) => count + 1);
       },
-      onGap: (_runId, missed) => {
-        setConnectionDetail(`caught up — replayed ${missed} events`);
-      },
+      onGap: (_runId, missed) => setConnectionDetail(`caught up — replayed ${missed} events`),
     });
     return clientRef.current;
   }, [applyEvent]);
 
   const pair = useCallback(
     (payload: PairingPayload) => {
-      setLive(null);
+      setConversation([]);
       const client = ensureClient();
       void loadLastSeenAt().then((at) => {
         client.setLastSeenAt(at);
@@ -285,23 +228,38 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     clientRef.current?.disconnect();
     setProject(null);
     setAgents([]);
-    setLive(null);
+    setConversation([]);
     void clearPairing();
   }, []);
 
-  /** Start a fresh conversation, so the agent does not carry the last one over. */
+  /** Start a fresh thread, so the agent does not carry the last one over. */
   const newConversation = useCallback(() => {
     conversationIdRef.current = randomId();
-    setLive(null);
+    setConversation([]);
   }, []);
+
+  const live = useMemo(
+    () => conversation.find((run) => run.status === 'working') ?? null,
+    [conversation],
+  );
 
   const stopRun = useCallback(() => {
     if (live) clientRef.current?.stopRun(live.runId);
   }, [live]);
 
+  const sendPrompt = useCallback((prompt: string) => {
+    const client = clientRef.current;
+    if (!client?.isConnected) return;
+
+    const runId = randomId();
+    // Show the prompt immediately rather than waiting for run_started to come
+    // back over the wire — a phone should never look like it dropped a tap.
+    setConversation((current) => [...current, emptyRun(runId, prompt)]);
+    client.startRun(runId, conversationIdRef.current, prompt);
+  }, []);
+
   // Reconnect silently on launch if this device has paired before. Failure is
-  // quiet on purpose: the phone simply shows the demo sessions and offers to
-  // pair, which is what an unpaired install does anyway.
+  // quiet: the phone simply offers to pair, as an unpaired install would.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -316,38 +274,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [ensureClient]);
 
-  const loadSession = useCallback((id: string) => {
-    const next = getSession(id);
-    if (!next) return;
-    setSession(next);
-    setPairedState(modeToPaired(next.mode));
-  }, []);
-
-  const setPaired = useCallback((value: boolean) => setPairedState(value), []);
-
-  const sendPrompt = useCallback(
-    (prompt: string) => {
-      const client = clientRef.current;
-      // Connected: this is a real run. Not connected: fall back to the demo data
-      // so the app still does something sensible with no desktop running.
-      if (client?.isConnected) {
-        const runId = randomId();
-        setLive(emptyRun(runId, prompt));
-        client.startRun(runId, conversationIdRef.current, prompt);
-        return;
-      }
-      setSession((current) => ({ ...current, prompt }));
-    },
-    [],
-  );
-
   const value = useMemo(
     () => ({
-      session,
-      paired,
-      loadSession,
-      setPaired,
-      sendPrompt,
       connectionState,
       connectionDetail,
       project,
@@ -355,22 +283,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       machine,
       capability,
       lastSeenAt,
+      conversation,
+      live,
+      history,
       activity,
       newSinceLastVisit,
       markChecked,
-      live,
-      history,
+      sendPrompt,
       newConversation,
       pair,
       disconnect,
       stopRun,
     }),
     [
-      session,
-      paired,
-      loadSession,
-      setPaired,
-      sendPrompt,
       connectionState,
       connectionDetail,
       project,
@@ -378,11 +303,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       machine,
       capability,
       lastSeenAt,
+      conversation,
+      live,
+      history,
       activity,
       newSinceLastVisit,
       markChecked,
-      live,
-      history,
+      sendPrompt,
       newConversation,
       pair,
       disconnect,
@@ -399,13 +326,67 @@ export function useWorkspace(): WorkspaceState {
   return ctx;
 }
 
+/** One run's state, advanced by one event. Pure, so it is easy to reason about. */
+function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
+  switch (event.type) {
+    case 'run_started':
+      return { ...run, prompt: event.prompt || run.prompt, status: 'working', startedAt: Date.now() };
+    case 'message_delta':
+      return { ...run, text: run.text + event.text };
+    case 'tool_started':
+      return {
+        ...run,
+        activity: [
+          ...run.activity,
+          { id: `${event.seq}`, label: event.toolName, ok: null, detail: shortDetail(event.input) },
+        ],
+      };
+    case 'tool_finished':
+      return {
+        ...run,
+        activity: [
+          ...run.activity,
+          { id: `${event.seq}`, label: event.ok ? 'done' : 'denied', ok: event.ok },
+        ],
+      };
+    case 'run_finished':
+      return {
+        ...run,
+        status:
+          event.outcome === 'completed'
+            ? 'finished'
+            : event.outcome === 'stopped'
+              ? 'stopped'
+              : 'failed',
+        outcome: event.outcome,
+      };
+    case 'error':
+      return { ...run, status: 'failed', outcome: event.message };
+    default:
+      return run;
+  }
+}
+
+function summarise(run: LiveRun): RunSummary {
+  return {
+    runId: run.runId,
+    prompt: run.prompt,
+    startedAt: run.startedAt ?? Date.now(),
+    finishedAt: Date.now(),
+    outcome: run.status === 'finished' ? 'completed' : run.status === 'stopped' ? 'stopped' : 'failed',
+    excerpt: firstLine(run.text),
+    filesRead: run.activity.filter((a) => a.label === 'Read').length,
+    commands: run.activity.filter((a) => a.label === 'Bash').length,
+  };
+}
+
 /** Pull a filename or command out of a tool input for a one-line label. */
 function shortDetail(input: string): string | undefined {
   try {
     const parsed = JSON.parse(input) as Record<string, unknown>;
-    const path = parsed['file_path'] ?? parsed['pattern'] ?? parsed['command'];
-    if (typeof path !== 'string') return undefined;
-    const tail = path.split(/[\/]/).pop() ?? path;
+    const value = parsed['file_path'] ?? parsed['pattern'] ?? parsed['command'];
+    if (typeof value !== 'string') return undefined;
+    const tail = value.split(/[\\/]/).pop() ?? value;
     return tail.length > 42 ? `${tail.slice(0, 42)}…` : tail;
   } catch {
     return undefined;
