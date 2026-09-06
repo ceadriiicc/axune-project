@@ -22,6 +22,8 @@ export interface ClientCallbacks {
   onEvent: (event: AgentEvent, replayed: boolean) => void;
   onPaired: (project: ProjectSummary, agents: AgentStatus[]) => void;
   onGap?: (runId: string, missedEvents: number) => void;
+  onProject?: (project: ProjectSummary) => void;
+  onAgents?: (agents: AgentStatus[]) => void;
 }
 
 export class AxuneClient {
@@ -35,6 +37,27 @@ export class AxuneClient {
   private deliberateClose = false;
 
   constructor(private readonly callbacks: ClientCallbacks) {}
+
+  /**
+   * Reconnect with a pairing saved from a previous launch, skipping the QR
+   * entirely. The one-time code is long spent; the session token is what makes
+   * a device trusted.
+   */
+  reconnectWithSession(url: string, sessionToken: string): void {
+    this.url = url;
+    this.sessionToken = sessionToken;
+    this.deliberateClose = false;
+    this.open(() => {
+      // `resume` doubles as "authenticate me"; with no active run it simply
+      // proves the device is still trusted.
+      this.send({
+        type: 'resume',
+        token: sessionToken,
+        runId: this.activeRunId ?? 'none',
+        lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
+      });
+    });
+  }
 
   /** First contact: redeem the one-time token from the QR code. */
   pair(payload: PairingPayload, deviceName: string): void {
@@ -91,6 +114,13 @@ export class AxuneClient {
     return this.socket?.readyState === 1;
   }
 
+  /** The durable credential, once paired. Null until then. */
+  get credential(): { url: string; sessionToken: string } | null {
+    return this.url && this.sessionToken
+      ? { url: this.url, sessionToken: this.sessionToken }
+      : null;
+  }
+
   private open(onOpen: () => void): void {
     if (!this.url) return;
     this.callbacks.onState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
@@ -144,6 +174,14 @@ export class AxuneClient {
         }
         return;
 
+      case 'project_changed':
+        this.callbacks.onProject?.(message.project);
+        return;
+
+      case 'agents_changed':
+        this.callbacks.onAgents?.(message.agents);
+        return;
+
       case 'event': {
         const { event } = message;
         const seen = this.lastSeq.get(event.runId) ?? -1;
@@ -161,7 +199,7 @@ export class AxuneClient {
   }
 
   private scheduleReconnect(): void {
-    if (!this.sessionToken || !this.activeRunId) {
+    if (!this.sessionToken) {
       return this.callbacks.onState('idle');
     }
     // Back off, but stay responsive: a phone usually rejoins Wi-Fi in seconds.
@@ -174,8 +212,8 @@ export class AxuneClient {
         this.send({
           type: 'resume',
           token: this.sessionToken!,
-          runId: this.activeRunId!,
-          lastSeq: this.lastSeq.get(this.activeRunId!) ?? -1,
+          runId: this.activeRunId ?? 'none',
+          lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
         });
       });
     }, delay);

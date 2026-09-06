@@ -7,7 +7,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "serve": "tsx src/serve.ts",
-    "try": "tsx src/tryTransport.ts"
+    "try": "tsx src/tryTransport.ts",
+    "try:continuity": "tsx src/tryContinuity.ts"
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",

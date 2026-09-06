@@ -64,6 +64,14 @@ export class PairingManager {
     return { ok: true, sessionToken, deviceName };
   }
 
+  /**
+   * Restore a device trusted in an earlier run of the desktop, so a restart
+   * does not invalidate a phone that already paired.
+   */
+  trust(sessionToken: string, deviceName = 'known device'): void {
+    this.paired.set(sessionToken, { deviceName, pairedAt: Date.now() });
+  }
+
   /** Does this token belong to an already-paired device? Used on reconnect. */
   isPaired(sessionToken: string): boolean {
     for (const known of this.paired.keys()) {

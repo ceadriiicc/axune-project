@@ -13,6 +13,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { PairingManager } from './PairingManager';
 import { RunRegistry } from './RunRegistry';
+import { SessionStore } from './SessionStore';
 
 /**
  * The desktop half of Axune: accepts one paired phone, runs agents against the
@@ -35,7 +36,12 @@ export class AxuneServer {
   constructor(
     readonly pairing: PairingManager,
     private project: ProjectSummary,
-  ) {}
+    private readonly store: SessionStore = new SessionStore(),
+  ) {
+    // Devices trusted in an earlier run of the desktop are still trusted, so a
+    // restart does not force the phone to rescan a QR code.
+    for (const token of this.store.trustedTokens()) this.pairing.trust(token);
+  }
 
   async start(port: number): Promise<number> {
     // Bound to all interfaces so the phone can reach it over the LAN. It is
@@ -112,6 +118,7 @@ export class AxuneServer {
         return this.send(socket, { type: 'pair_rejected', reason: result.reason, detail: result.detail });
       }
       this.authed.set(socket, result.sessionToken);
+      this.store.trustDevice(result.sessionToken, message.deviceName);
       this.announce(`${message.deviceName} paired`);
       return this.send(socket, {
         type: 'paired',
@@ -144,6 +151,11 @@ export class AxuneServer {
       for (const event of slice.events) {
         this.send(socket, { type: 'event', event, replayed: true });
       }
+
+      // A resumed device knows its token but not what the desktop is pointed
+      // at — the project may have changed while it was away.
+      this.send(socket, { type: 'project_changed', project: this.project });
+      this.send(socket, { type: 'agents_changed', agents: await this.agentStatuses() });
       return;
     }
 
@@ -177,6 +189,9 @@ export class AxuneServer {
         // Phase 1 is read-only. Write access waits for worktree isolation, so a
         // second agent cannot trample the first one's working tree.
         readOnly: true,
+        // Continue the same provider conversation when we have seen this Axune
+        // session before, so the agent remembers the previous prompt.
+        resumeSessionId: this.store.providerSession(message.sessionId, 'claude-code'),
       },
       (event: AgentEvent) => {
         this.registry.record(event);
@@ -186,7 +201,17 @@ export class AxuneServer {
     );
 
     this.running.set(message.runId, run);
-    void run.done.finally(() => this.running.delete(message.runId));
+    void run.done
+      .then((handle) => {
+        if (handle.providerSessionId) {
+          this.store.rememberProviderSession(
+            message.sessionId,
+            'claude-code',
+            handle.providerSessionId,
+          );
+        }
+      })
+      .finally(() => this.running.delete(message.runId));
   }
 
   private send(socket: WebSocket, message: ServerMessage): void {

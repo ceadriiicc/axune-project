@@ -1,8 +1,17 @@
 import type { AgentEvent, AgentStatus, PairingPayload, ProjectSummary } from '@axune/protocol';
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { AxuneClient, type ConnectionState } from './AxuneClient';
 import { getSession, SESSIONS } from './fakeData';
+import { clearPairing, loadPairing, savePairing } from './pairingStore';
 import type { Session, SessionMode } from './types';
 
 /**
@@ -51,6 +60,9 @@ interface WorkspaceState {
 
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
 
+/** Shown on the desktop as the name of the trusted device. */
+const DEVICE_NAME = 'iPhone';
+
 function modeToPaired(mode: SessionMode): boolean {
   return mode === 'paired';
 }
@@ -76,6 +88,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [live, setLive] = useState<LiveRun | null>(null);
 
   const clientRef = useRef<AxuneClient | null>(null);
+  /**
+   * One conversation id for the whole live session, NOT one per prompt.
+   * The desktop keys Claude Code's resumable session off this, so a fresh id
+   * each time would silently start a new conversation every message — the exact
+   * bug this was meant to fix.
+   */
+  const conversationIdRef = useRef<string>(randomId());
 
   const applyEvent = useCallback((event: AgentEvent) => {
     setLive((current) => {
@@ -131,7 +150,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       onPaired: (proj, agentList) => {
         setProject(proj);
         setAgents(agentList);
+        // Persist the credential so a reload, or tomorrow morning, does not
+        // mean scanning another QR code.
+        const credential = clientRef.current?.credential;
+        if (credential) {
+          void savePairing({
+            url: credential.url,
+            sessionToken: credential.sessionToken,
+            projectName: proj.name,
+            pairedAt: Date.now(),
+          });
+        }
       },
+      onProject: (proj) => setProject(proj),
+      onAgents: (agentList) => setAgents(agentList),
       onGap: (_runId, missed) => {
         setConnectionDetail(`caught up — replayed ${missed} events`);
       },
@@ -142,7 +174,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const pair = useCallback(
     (payload: PairingPayload) => {
       setLive(null);
-      ensureClient().pair(payload, 'iPhone');
+      ensureClient().pair(payload, DEVICE_NAME);
     },
     [ensureClient],
   );
@@ -152,11 +184,27 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setProject(null);
     setAgents([]);
     setLive(null);
+    void clearPairing();
   }, []);
 
   const stopRun = useCallback(() => {
     if (live) clientRef.current?.stopRun(live.runId);
   }, [live]);
+
+  // Reconnect silently on launch if this device has paired before. Failure is
+  // quiet on purpose: the phone simply shows the demo sessions and offers to
+  // pair, which is what an unpaired install does anyway.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const stored = await loadPairing();
+      if (cancelled || !stored) return;
+      ensureClient().reconnectWithSession(stored.url, stored.sessionToken);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureClient]);
 
   const loadSession = useCallback((id: string) => {
     const next = getSession(id);
@@ -175,7 +223,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (client?.isConnected) {
         const runId = randomId();
         setLive(emptyRun(runId, prompt));
-        client.startRun(runId, randomId(), prompt);
+        client.startRun(runId, conversationIdRef.current, prompt);
         return;
       }
       setSession((current) => ({ ...current, prompt }));
