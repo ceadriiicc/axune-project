@@ -6,11 +6,11 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
+      "autoIncrement": true,
+      "channel": "development",
       "ios": {
-        "simulator": false
-      },
-      "channel": "development"
+        "image": "latest"
+      }
     },
     "preview": {
       "distribution": "internal",

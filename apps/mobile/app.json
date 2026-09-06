@@ -14,7 +14,12 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.cedricyeoh.axune",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Axune uses the camera to scan the pairing QR code shown by Axune Desktop.",
+        "NSLocalNetworkUsageDescription": "Axune connects to Axune Desktop on your local network to run your coding agents against your own project.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
