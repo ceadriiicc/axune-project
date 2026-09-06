@@ -122,13 +122,24 @@ export function ChangeReview({
   );
 }
 
+/** Header lines git emits that tell a phone reader nothing new. */
+const DIFF_NOISE =
+  /^(index [0-9a-f]+\.\.|--- |\+\+\+ |new file mode|deleted file mode|similarity index|rename (from|to) )/;
+
 /** A patch rendered so additions and removals are distinguishable at a glance. */
 function Diff({ text }: { text: string }) {
   if (!text.trim()) {
     return <Text style={styles.noDiff}>No diff available for this file.</Text>;
   }
 
-  const lines = text.split('\n').slice(0, 400);
+  // Git prefixes each file's patch with a blob-hash index line and the a/ and
+  // b/ paths. The filename is already in the row directly above, and blob
+  // hashes mean nothing to a reader — on a phone that is three of roughly
+  // twenty visible lines spent repeating the header.
+  const lines = text
+    .split('\n')
+    .filter((line) => !DIFF_NOISE.test(line))
+    .slice(0, 400);
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.diffScroll}>
