@@ -29,6 +29,27 @@ const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'WebFet
  */
 const MUTATING_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
 
+/**
+ * Shapes the agent's output for the surface it is actually being read on.
+ *
+ * Claude Code's default posture is an interactive terminal session: dense file
+ * paths, commit hashes, and a closing offer to pick between next tasks. That is
+ * right at a keyboard and wrong on a phone screen held away from the desk.
+ *
+ * Appended to the `claude_code` preset rather than replacing it, so the coding
+ * ability is untouched and only the presentation changes. Every adapter gets
+ * the same treatment, so Codex and Gemini do not each sound like a different
+ * product.
+ */
+const PHONE_CONTEXT_PROMPT = `Your reply is being read on a phone screen, inside an app called Axune, by someone who is probably away from their computer.
+
+- Lead with the answer. The first sentence should be the thing they asked for.
+- Keep it short. A few short paragraphs, not a report.
+- Plain prose. Avoid nested bullet lists, tables, and long code blocks — they are unreadable at this size.
+- Mention file paths, commit hashes and function names only when they are the point, not as supporting detail.
+- Do not end by offering a menu of next tasks or asking which one to do. If a next step genuinely matters, say it in one sentence.
+- Never ask a question that assumes the reader can type a long reply.`;
+
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly agentId = 'claude-code' as const;
 
@@ -95,6 +116,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           options: {
             cwd: request.cwd,
             abortController: abort,
+            systemPrompt: {
+              type: 'preset',
+              preset: 'claude_code',
+              append: PHONE_CONTEXT_PROMPT,
+            },
             // Leave permissions in a prompting mode on purpose. `canUseTool`
             // fires ONLY when the permission flow falls through to a prompt —
             // populating `allowedTools` or using a permissive permissionMode

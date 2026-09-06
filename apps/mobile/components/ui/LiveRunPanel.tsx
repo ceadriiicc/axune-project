@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AgentText } from '@/components/ui/AgentText';
 import { AGENTS } from '@/constants/agents';
 import { color, radius, spacing } from '@/constants/theme';
 import type { LiveRun } from '@/lib/WorkspaceContext';
@@ -46,9 +47,13 @@ export function LiveRunPanel({ run, onStop }: { run: LiveRun; onStop: () => void
       ) : null}
 
       <View style={[styles.bubble, { backgroundColor: agent.bubbleBg }]}>
-        <Text style={[styles.answer, { color: agent.bubbleText }]}>
-          {run.text || (working ? 'Working…' : 'No output yet.')}
-        </Text>
+        {run.text ? (
+          <AgentText text={run.text} style={{ color: agent.bubbleText }} />
+        ) : (
+          <Text style={[styles.answer, { color: agent.bubbleText }]}>
+            {working ? 'Working…' : 'No output yet.'}
+          </Text>
+        )}
       </View>
 
       {working ? (
