@@ -98,24 +98,30 @@ export default function HomeScreen() {
           <ActiveRun run={running} onOpen={() => router.push('/workspace')} onStop={stopRun} />
         ) : null}
 
-        {/* The project being controlled. */}
+        {/*
+          One unit answering: what am I controlling, on which branch, with what
+          permission, is an agent ready, and what can I do next — so the primary
+          action sits with the context it needs rather than below a Git card.
+        */}
         {project ? (
           <View style={styles.projectCard}>
             <View style={styles.projectTop}>
               <Text style={styles.projectName} numberOfLines={1}>
                 {project.name}
               </Text>
-              <Text style={styles.capability}>{capability === 'read-only' ? 'Read-only' : 'Read + write'}</Text>
+              <Text style={styles.capability}>
+                {capability === 'read-only' ? 'Read-only' : 'Read + write'}
+              </Text>
             </View>
             <Text style={styles.branch} numberOfLines={1}>
               {project.branch}
             </Text>
 
-            <View style={styles.agentRow}>
+            <View style={styles.agentLine}>
               {agents.map((agent) => {
                 const meta = AGENTS[agent.agentId === 'claude-code' ? 'claude' : 'codex'];
                 return (
-                  <View key={agent.agentId} style={styles.agentChip}>
+                  <View key={agent.agentId} style={styles.agentItem}>
                     <View
                       style={[
                         styles.dot,
@@ -130,31 +136,25 @@ export default function HomeScreen() {
                 );
               })}
             </View>
+
+            {!running ? (
+              <Pressable
+                style={styles.primaryInline}
+                onPress={() => {
+                  if (!connected) return router.push('/pair');
+                  newConversation();
+                  router.push('/workspace');
+                }}
+              >
+                <Ionicons name={connected ? 'add' : 'refresh'} size={16} color="#1e1b18" />
+                <Text style={styles.primaryText}>{connected ? 'New run' : 'Reconnect'}</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
         {/* State 4 — disconnected keeps showing the last known picture. */}
         {git ? <RepoStatus git={git} stale={!connected} /> : null}
-
-        {!running ? (
-          <Pressable
-            style={styles.primary}
-            onPress={() => {
-              if (!connected) return router.push('/pair');
-              newConversation();
-              router.push('/workspace');
-            }}
-          >
-            <Ionicons name={connected ? 'add' : 'refresh'} size={17} color="#1e1b18" />
-            <Text style={styles.primaryText}>{connected ? 'New run' : 'Reconnect'}</Text>
-          </Pressable>
-        ) : null}
-
-        <View style={styles.quickRow}>
-          <Quick icon="albums-outline" label="Sessions" onPress={() => router.push('/sessions')} />
-          <Quick icon="grid-outline" label="Workspace" onPress={() => router.push('/workspace')} />
-          <Quick icon="git-compare-outline" label="Insights" onPress={() => router.push('/insights')} />
-        </View>
 
         {lastRun ? (
           <>
@@ -179,6 +179,12 @@ export default function HomeScreen() {
                   {lastRun.excerpt}
                 </Text>
               ) : null}
+
+              {/* Home should make the next step obvious, not just report history. */}
+              <View style={styles.continueRow}>
+                <Text style={styles.continueText}>{continuation(lastRun.outcome)}</Text>
+                <Ionicons name="chevron-forward" size={15} color={color.claudeText} />
+              </View>
             </Pressable>
           </>
         ) : null}
@@ -212,21 +218,11 @@ export default function HomeScreen() {
   );
 }
 
-function Quick({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={styles.quick} onPress={onPress}>
-      <Ionicons name={icon} size={17} color={color.textMuted} />
-      <Text style={styles.quickLabel}>{label}</Text>
-    </Pressable>
-  );
+/** What the user most likely wants to do next with a finished run. */
+function continuation(outcome: string): string {
+  if (outcome === 'failed') return 'Review failure';
+  if (outcome === 'stopped') return 'View session';
+  return 'View result';
 }
 
 function dotColor(state: string): string {
@@ -263,7 +259,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.line,
     backgroundColor: color.surface,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
     marginTop: spacing.md,
   },
   projectTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -277,20 +274,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  branch: { color: color.textMuted, fontSize: 13, marginTop: 3 },
-  agentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-  agentChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: color.line,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
+  branch: { color: color.textMuted, fontSize: 13, marginTop: 2 },
+  agentLine: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+  agentItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   agentName: { fontSize: 12, fontWeight: '600' },
   agentState: { color: color.textSoft, fontSize: 11 },
+  primaryInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: color.claude,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    marginTop: spacing.md,
+  },
 
   primary: {
     flexDirection: 'row',
@@ -303,18 +301,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   primaryText: { color: '#1e1b18', fontSize: 15, fontWeight: '700' },
-
-  quickRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  quick: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    paddingVertical: 12,
-  },
-  quickLabel: { color: color.textMuted, fontSize: 11 },
 
   sectionLabel: {
     color: color.textSoft,
@@ -337,6 +323,8 @@ const styles = StyleSheet.create({
   runMeta: { color: color.textMuted, fontSize: 12 },
   runCounts: { color: color.textSoft, fontSize: 12, marginTop: 3 },
   runExcerpt: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: spacing.sm },
+  continueRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm },
+  continueText: { color: color.claudeText, fontSize: 13, fontWeight: '600' },
 
   list: { gap: 6 },
   smallRow: {

@@ -48,11 +48,14 @@ export function collectAlerts(input: {
     alerts.push({ id: 'detached', severity: 'warn', text: 'HEAD is detached — commits may be lost' });
   }
 
-  if (git?.behind) {
+  // Being a commit or two behind is ordinary and shown quietly in the repository
+  // row. Only a real divergence is worth an alert, or every branch you have not
+  // pulled today becomes a warning and the alerts stop meaning anything.
+  if (git?.behind && git.behind >= 5) {
     alerts.push({
       id: 'behind',
       severity: 'warn',
-      text: `${git.behind} commit${git.behind === 1 ? '' : 's'} behind the remote`,
+      text: `${git.behind} commits behind the remote`,
     });
   }
 
@@ -70,11 +73,11 @@ export function collectAlerts(input: {
 
   // A run that has gone quiet for minutes is worth flagging, without pretending
   // to know a percentage complete — agents cannot reliably report progress.
-  if (input.staleRunMs && input.staleRunMs > 2 * 60 * 1000) {
+  if (input.staleRunMs && input.staleRunMs > 5 * 60 * 1000) {
     alerts.push({
       id: 'stale-run',
       severity: 'warn',
-      text: `No output for ${Math.round(input.staleRunMs / 60000)} minutes`,
+      text: `A run has produced no output for ${Math.round(input.staleRunMs / 60000)} minutes`,
     });
   }
 

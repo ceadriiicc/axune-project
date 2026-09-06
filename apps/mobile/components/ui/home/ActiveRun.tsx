@@ -57,8 +57,21 @@ export function ActiveRun({
       <Text style={styles.counts}>
         {reads} file{reads === 1 ? '' : 's'} read · {commands} command
         {commands === 1 ? '' : 's'}
-        {quietFor > 20_000 ? ` · quiet for ${formatDuration(quietFor)}` : ''}
       </Text>
+
+      {/*
+        Silence is reported as a fact, not a diagnosis. An agent waiting on a
+        test run, an install or a slow command is working perfectly well, and
+        calling that "stalled" after two minutes would teach the user to worry
+        every time. Only a much longer gap earns stronger wording.
+      */}
+      {quietFor > 20_000 ? (
+        <Text style={[styles.counts, quietFor > 5 * 60_000 && styles.warnText]}>
+          {quietFor > 5 * 60_000
+            ? `No output for ${formatDuration(quietFor)} — possibly stalled`
+            : `Last activity ${formatDuration(quietFor)} ago`}
+        </Text>
+      ) : null}
 
       <View style={styles.actions}>
         <Pressable style={styles.open} onPress={onOpen}>
@@ -109,6 +122,7 @@ const styles = StyleSheet.create({
   prompt: { color: color.text, fontSize: 15, lineHeight: 21, marginTop: spacing.sm },
   doing: { color: color.claudeText, fontSize: 12, marginTop: spacing.sm },
   counts: { color: color.textSoft, fontSize: 12, marginTop: 4 },
+  warnText: { color: color.claude },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md },
   open: {
     flex: 1,
