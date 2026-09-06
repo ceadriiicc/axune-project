@@ -1,126 +1,214 @@
-import { BRAND } from '@axune/shared';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-import { SectionLabel } from '@/components/ui/SectionLabel';
-import { SegmentedControl } from '@/components/ui/SegmentedControl';
-import { SessionRow } from '@/components/ui/SessionRow';
-import { color, font, radius, spacing } from '@/constants/theme';
-import { SESSIONS, SUGGESTED_PROMPTS } from '@/lib/fakeData';
+import { StatusRow } from '@/components/ui/StatusRow';
+import { color, radius, spacing } from '@/constants/theme';
 import { useWorkspace } from '@/lib/WorkspaceContext';
+
+/**
+ * Home is where you ask. Workspace is where you watch.
+ *
+ * The prompt box is the primary action, so it sits above the fold rather than
+ * a tab away. Suggestions appear only until there is real history — they are
+ * onboarding, not permanent furniture, and once you know what to ask you will
+ * type your own.
+ */
+const SUGGESTIONS = [
+  'What changed on this branch?',
+  'Summarise what this project does.',
+  'Where is authentication handled?',
+  'Why might the build be failing?',
+];
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { loadSession, sendPrompt, setPaired } = useWorkspace();
-  const [modeTab, setModeTab] = useState<'paired' | 'independent'>('paired');
+  const {
+    connectionState,
+    project,
+    agents,
+    history,
+    sendPrompt,
+    newConversation,
+  } = useWorkspace();
 
-  const openSession = (id: string) => {
-    loadSession(id);
-    router.push('/workspace');
-  };
+  const [draft, setDraft] = useState('');
+  const connected = connectionState === 'connected' || connectionState === 'reconnecting';
 
-  const openPrompt = (text: string) => {
-    setPaired(modeTab === 'paired');
+  const ask = (prompt: string) => {
+    const text = prompt.trim();
+    if (!text) return;
+    if (!connected) return router.push('/pair');
+    newConversation();
     sendPrompt(text);
+    setDraft('');
     router.push('/workspace');
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>{BRAND.name}</Text>
-        <Text style={styles.subtitle}>{BRAND.tagline}</Text>
-
-        <SegmentedControl
-          value={modeTab}
-          onChange={(v) => setModeTab(v as 'paired' | 'independent')}
-          options={[
-            { key: 'paired', label: 'Paired', glyph: '👥' },
-            { key: 'independent', label: 'Independent', glyph: '👤' },
-          ]}
-        />
-
-        <SectionLabel label="Recent Sessions" action="See all" onPressAction={() => router.push('/sessions')} />
-        <View style={styles.list}>
-          {SESSIONS.slice(0, 3).map((session) => (
-            <SessionRow key={session.id} session={session} onPress={() => openSession(session.id)} />
-          ))}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.header}>
+          <Text style={styles.wordmark}>Axune</Text>
+          <StatusRow
+            state={connectionState}
+            project={project}
+            agents={agents}
+            onPress={() => router.push('/pair')}
+          />
         </View>
 
-        <SectionLabel label="Suggested Prompts" />
-        <View style={styles.chips}>
-          {SUGGESTED_PROMPTS.slice(0, 4).map((prompt) => (
-            <Pressable key={prompt.id} style={styles.chip} onPress={() => openPrompt(prompt.text)}>
-              <Text style={styles.chipIcon}>{prompt.glyph}</Text>
-              <Text style={styles.chipLabel}>{prompt.label}</Text>
-            </Pressable>
-          ))}
+        <View style={styles.composer}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder={connected ? 'Ask about your project…' : 'Pair to start asking…'}
+            placeholderTextColor={color.textSoft}
+            multiline
+            onSubmitEditing={() => ask(draft)}
+            returnKeyType="send"
+            blurOnSubmit
+          />
           <Pressable
-            style={[styles.chip, styles.chipWide]}
-            onPress={() => openPrompt(SUGGESTED_PROMPTS[4].text)}
+            style={[styles.send, !draft.trim() && styles.sendIdle]}
+            onPress={() => ask(draft)}
           >
-            <Text style={styles.chipIcon}>{SUGGESTED_PROMPTS[4].glyph}</Text>
-            <Text style={styles.chipLabel}>{SUGGESTED_PROMPTS[4].label}</Text>
+            <Ionicons
+              name="arrow-up"
+              size={18}
+              color={draft.trim() ? '#0f1b1c' : color.textSoft}
+            />
           </Pressable>
         </View>
-      </ScrollView>
+
+        <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
+          {history.length === 0 ? (
+            <View style={styles.suggestions}>
+              {SUGGESTIONS.map((suggestion) => (
+                <Pressable key={suggestion} style={styles.chip} onPress={() => ask(suggestion)}>
+                  <Text style={styles.chipText}>{suggestion}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            history.map((run) => (
+              <Pressable
+                key={run.runId}
+                style={styles.runRow}
+                onPress={() => router.push('/workspace')}
+              >
+                <View style={[styles.outcomeDot, { backgroundColor: outcomeColor(run.outcome) }]} />
+                <View style={styles.flex}>
+                  <Text style={styles.runPrompt} numberOfLines={2}>
+                    {run.prompt || 'Untitled run'}
+                  </Text>
+                  {run.excerpt ? (
+                    <Text style={styles.runExcerpt} numberOfLines={1}>
+                      {run.excerpt}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text style={styles.runTime}>{relativeTime(run.startedAt)}</Text>
+              </Pressable>
+            ))
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+function outcomeColor(outcome: string): string {
+  if (outcome === 'completed') return color.ok;
+  if (outcome === 'stopped') return color.textSoft;
+  return color.danger;
+}
+
+function relativeTime(at: number): string {
+  const seconds = Math.max(1, Math.round((Date.now() - at) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: color.bg,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl * 2,
-  },
-  title: {
-    fontSize: font.title,
-    fontWeight: '800',
-    letterSpacing: -1,
-    color: color.text,
-  },
-  subtitle: {
-    marginTop: 6,
-    color: color.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  list: {
-    gap: spacing.sm,
-  },
-  chips: {
+  safe: { flex: 1, backgroundColor: color.bg },
+  flex: { flex: 1 },
+  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  wordmark: { fontSize: 22, fontWeight: '800', letterSpacing: -0.6, color: color.text },
+  composer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'flex-end',
     gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.line,
+    backgroundColor: color.surface,
   },
+  input: {
+    flex: 1,
+    color: color.text,
+    fontSize: 15,
+    lineHeight: 21,
+    maxHeight: 120,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 6,
+  },
+  send: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.sm,
+    backgroundColor: color.codex,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendIdle: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.sm },
+  suggestions: { gap: spacing.sm },
   chip: {
-    width: '48%',
     borderWidth: 1,
     borderColor: color.line,
     backgroundColor: color.surface,
     borderRadius: radius.md,
-    paddingVertical: 13,
+    paddingVertical: 12,
     paddingHorizontal: spacing.md,
+  },
+  chipText: { color: color.textMuted, fontSize: 14 },
+  runRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: color.line,
+    backgroundColor: color.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
-  chipWide: {
-    width: '100%',
-    justifyContent: 'center',
-  },
-  chipIcon: {
-    color: color.claude,
-    fontSize: 15,
-  },
-  chipLabel: {
-    color: '#f1f4f8',
-    fontSize: 14,
-    flexShrink: 1,
-  },
+  outcomeDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
+  runPrompt: { color: color.text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  runExcerpt: { color: color.textMuted, fontSize: 12, marginTop: 4 },
+  runTime: { color: color.textSoft, fontSize: 11, marginTop: 3 },
 });

@@ -34,6 +34,16 @@ export interface LiveRun {
   caughtUp: boolean;
 }
 
+/** A run that actually happened, kept so Home and Sessions can show real history. */
+export interface RunSummary {
+  runId: string;
+  prompt: string;
+  startedAt: number;
+  outcome: 'completed' | 'stopped' | 'failed';
+  /** First line of the answer, for the list row. */
+  excerpt: string;
+}
+
 export interface ActivityLine {
   id: string;
   label: string;
@@ -53,6 +63,8 @@ interface WorkspaceState {
   project: ProjectSummary | null;
   agents: AgentStatus[];
   live: LiveRun | null;
+  history: RunSummary[];
+  newConversation: () => void;
   pair: (payload: PairingPayload) => void;
   disconnect: () => void;
   stopRun: () => void;
@@ -86,6 +98,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [live, setLive] = useState<LiveRun | null>(null);
+  const [history, setHistory] = useState<RunSummary[]>([]);
 
   const clientRef = useRef<AxuneClient | null>(null);
   /**
@@ -121,6 +134,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             ],
           };
         case 'run_finished':
+          setHistory((past) => [
+            {
+              runId: run.runId,
+              prompt: run.prompt,
+              startedAt: Date.now(),
+              outcome: event.outcome,
+              excerpt: firstLine(run.text),
+            },
+            ...past.filter((entry) => entry.runId !== run.runId),
+          ]);
           return {
             ...run,
             status:
@@ -187,6 +210,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     void clearPairing();
   }, []);
 
+  /** Start a fresh conversation, so the agent does not carry the last one over. */
+  const newConversation = useCallback(() => {
+    conversationIdRef.current = randomId();
+    setLive(null);
+  }, []);
+
   const stopRun = useCallback(() => {
     if (live) clientRef.current?.stopRun(live.runId);
   }, [live]);
@@ -243,6 +272,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       project,
       agents,
       live,
+      history,
+      newConversation,
       pair,
       disconnect,
       stopRun,
@@ -258,6 +289,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       project,
       agents,
       live,
+      history,
+      newConversation,
       pair,
       disconnect,
       stopRun,
@@ -271,6 +304,11 @@ export function useWorkspace(): WorkspaceState {
   const ctx = useContext(WorkspaceContext);
   if (!ctx) throw new Error('useWorkspace must be used within a WorkspaceProvider');
   return ctx;
+}
+
+function firstLine(text: string): string {
+  const line = text.trim().split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
+  return line.replace(/[*`#]/g, '').slice(0, 120);
 }
 
 /** react-native has no crypto.randomUUID; ids only need to be unique per device. */
