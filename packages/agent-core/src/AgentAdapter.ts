@@ -14,10 +14,16 @@ export interface AgentAdapter {
   detect(): Promise<DetectionResult>;
 
   /**
-   * Start a run. Events are delivered to `onEvent` as they happen, in `seq`
-   * order. Resolves when the run reaches a terminal state.
+   * Start a run and return immediately with a handle.
+   *
+   * Returns synchronously rather than resolving at the end, because the phone
+   * has a Stop button: the caller must be able to interrupt a run that is
+   * still going. An adapter whose only entry point resolved on completion
+   * could not support that.
+   *
+   * Events arrive on `onEvent` as they happen, in `seq` order.
    */
-  run(request: RunRequest, onEvent: (event: AgentEvent) => void): Promise<RunHandle>;
+  start(request: RunRequest, onEvent: (event: AgentEvent) => void): RunningRun;
 }
 
 export interface DetectionResult {
@@ -54,7 +60,12 @@ export interface RunHandle {
   outcome: 'completed' | 'stopped' | 'failed';
 }
 
-/** Returned by `start` so a run can be stopped while it is still going. */
+/**
+ * Returned by `start` so a run can be stopped while it is still going.
+ *
+ * `done` resolves once the run reaches a terminal state, including when it was
+ * stopped - a stop is an outcome, not an error.
+ */
 export interface RunningRun {
   runId: string;
   stop(): Promise<void>;

@@ -262,9 +262,6 @@ ${INJECTION_NOTICE}`,
     };
   }
 
-  async run(request: RunRequest, onEvent: (event: AgentEvent) => void): Promise<RunHandle> {
-    return this.start(request, onEvent).done;
-  }
 }
 
 /**
