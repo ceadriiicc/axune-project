@@ -118,7 +118,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         worktreePath: null,
       });
 
-      try {
+      /**
+       * One attempt at the run. Separated so a resume that turns out to be
+       * stale can be retried without it — see the catch below.
+       */
+      const attempt = (resumeSessionId: string | null) => {
         const stream = query({
           prompt: request.prompt,
           options: {
@@ -145,7 +149,7 @@ ${INJECTION_NOTICE}`,
             // Load the target repository's own CLAUDE.md and settings, since the
             // agent is meant to work the way that project expects.
             settingSources: ['project'],
-            ...(request.resumeSessionId ? { resume: request.resumeSessionId } : {}),
+            ...(resumeSessionId ? { resume: resumeSessionId } : {}),
             // Real signature is (toolName, input, options) — three positional
             // arguments, not one request object. Published examples showing a
             // single `{toolName, toolInput, toolUseId}` argument are wrong, and
@@ -198,17 +202,46 @@ ${INJECTION_NOTICE}`,
           },
         });
 
-        emit({ type: 'working', label: 'Claude Code is working' });
+        return stream as AsyncIterable<UnknownMessage>;
+      };
 
-        for await (const message of stream as AsyncIterable<UnknownMessage>) {
+      const consume = async (resumeSessionId: string | null) => {
+        for await (const message of attempt(resumeSessionId)) {
           providerSessionId = pickSessionId(message) ?? providerSessionId;
           for (const event of translate(message)) {
             emit(event);
           }
         }
+      };
+
+      try {
+        emit({ type: 'working', label: 'Claude Code is working' });
+        await consume(request.resumeSessionId ?? null);
       } catch (error) {
         if (abort.signal.aborted) {
           outcome = 'stopped';
+        } else if (request.resumeSessionId && isMissingSession(error)) {
+          // The conversation this thread belonged to is gone — Claude Code
+          // prunes its own session files, and the phone can hold a thread for
+          // far longer than they survive. Starting over loses the earlier
+          // context but answers the question; failing loses both.
+          providerSessionId = null;
+          emit({
+            type: 'error',
+            message:
+              'The earlier conversation is no longer available on the desktop, so this reply starts fresh without it.',
+            recoverable: true,
+          });
+          try {
+            await consume(null);
+          } catch (retryError) {
+            if (abort.signal.aborted) {
+              outcome = 'stopped';
+            } else {
+              outcome = 'failed';
+              emit({ type: 'error', message: describeError(retryError), recoverable: false });
+            }
+          }
         } else {
           outcome = 'failed';
           emit({ type: 'error', message: describeError(error), recoverable: false });
@@ -336,6 +369,17 @@ function safeStringify(value: unknown): string {
   } catch {
     return '[unserialisable]';
   }
+}
+
+/**
+ * Did this run fail purely because the conversation being resumed is gone?
+ *
+ * Matched on the message because the SDK surfaces it as a generic error result
+ * with no code to test. Kept narrow on purpose: a broader match would silently
+ * discard conversation context for unrelated failures.
+ */
+function isMissingSession(error: unknown): boolean {
+  return /no conversation found with session id/i.test(describeError(error));
 }
 
 function describeError(error: unknown): string {
