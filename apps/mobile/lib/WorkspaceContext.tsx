@@ -27,6 +27,7 @@ import {
   savePairing,
   saveLastSeenAt,
 } from './pairingStore';
+import { clearWorkspace, loadWorkspace, saveWorkspace } from './threadStore';
 
 /**
  * All state the phone holds about the desktop it is driving.
@@ -168,6 +169,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * silently start a new conversation every message.
    */
   const conversationIdRef = useRef<string>(randomId());
+  /**
+   * Nothing is written to disk until what is on disk has been read.
+   * Without this the first render's empty state races the load and erases
+   * every stored conversation on launch.
+   */
+  const hydrated = useRef(false);
 
   const applyEvent = useCallback((event: AgentEvent) => {
     setConversation((current) => {
@@ -267,7 +274,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setProject(null);
     setAgents([]);
     setConversation([]);
+    setThreads([]);
+    setHistory([]);
     void clearPairing();
+    // Transcripts quote the repository, so forgetting the desktop forgets what
+    // its agents said about it too. Leaving them behind would be the wrong
+    // default for a control that reads as "disconnect and clear".
+    void clearWorkspace();
   }, []);
 
   /**
@@ -349,6 +362,47 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       current.map((run) => (run.runId === runId ? { ...run, decision } : run)),
     );
   }, []);
+
+  // Restore conversations written by a previous launch. Runs before anything
+  // is saved, so an empty first render cannot wipe the file.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const stored = await loadWorkspace();
+      if (cancelled) {
+        hydrated.current = true;
+        return;
+      }
+      if (stored) {
+        setConversation(stored.conversation);
+        setThreads(stored.threads);
+        setHistory(stored.history);
+        if (stored.conversationId) conversationIdRef.current = stored.conversationId;
+      }
+      hydrated.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist on a delay rather than on every token: a streaming run changes
+  // `conversation` many times a second, and each save serialises the lot and
+  // writes it synchronously. The delay is long enough that a run in full flow
+  // saves a handful of times, not hundreds.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    const timer = setTimeout(() => {
+      void saveWorkspace({
+        conversation,
+        conversationId: conversationIdRef.current,
+        threads,
+        history,
+        projectName: project?.name ?? null,
+      });
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [conversation, threads, history, project]);
 
   // Reconnect silently on launch if this device has paired before. Failure is
   // quiet: the phone simply offers to pair, as an unpaired install would.
