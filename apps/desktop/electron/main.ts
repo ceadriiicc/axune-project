@@ -7,9 +7,10 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 
 import { AxuneServer } from '../src/core/AxuneServer';
 import { PairingManager, lanAddress } from '../src/core/PairingManager';
+import { AXUNE_PORT } from '../src/core/port';
 
 const execFileAsync = promisify(execFile);
-const PORT = 8790;
+
 
 /**
  * Axune Desktop.
@@ -59,7 +60,7 @@ async function startServer(repo: string): Promise<void> {
   server.onConnectionChange((state: string) => send('connection', state));
   server.activityLog.onEvent((event) => send('activity', event));
 
-  const port = await server.start(PORT);
+  const port = await server.start(AXUNE_PORT);
   const payload = pairing.issue(port, basename(repo));
 
   send('ready', {
@@ -113,7 +114,7 @@ app.whenReady().then(async () => {
   /** A fresh pairing code, for when the previous one expired. */
   ipcMain.handle('new-code', async () => {
     if (!pairing || !server) return null;
-    return pairing.issue(PORT, basename(projectPath));
+    return pairing.issue(AXUNE_PORT, basename(projectPath));
   });
 
   ipcMain.handle('open-project', () => shell.openPath(projectPath));

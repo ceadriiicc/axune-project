@@ -68,7 +68,13 @@ export class AxuneServer {
 
     await new Promise<void>((resolve, reject) => {
       this.wss!.once('listening', resolve);
-      this.wss!.once('error', reject);
+      this.wss!.once('error', (error) => {
+        // The port is taken, most likely by another Axune. Drop the dead
+        // server so a caller can retry on a different port with a clean slate.
+        this.wss?.close();
+        this.wss = null;
+        reject(error);
+      });
     });
 
     // Watch the repository even with no phone connected — the changes worth
@@ -201,6 +207,9 @@ export class AxuneServer {
         });
       }
       this.authed.set(socket, message.token);
+      // Keeps this phone at the top of the trusted list, so expiry retires the
+      // tokens of devices that never come back rather than the one in use.
+      this.store.touchDevice(message.token);
       this.announce(`device reconnected, replaying run ${message.runId.slice(0, 8)}`);
       this.sendActivity(socket, message.lastSeenAt);
       void this.sendBranches(socket);

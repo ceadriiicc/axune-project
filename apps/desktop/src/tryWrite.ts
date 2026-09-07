@@ -17,6 +17,7 @@ import { WebSocket } from 'ws';
 
 import { AxuneServer } from './core/AxuneServer';
 import { PairingManager } from './core/PairingManager';
+import { listenOnKnownPort } from './core/port';
 
 const execFileAsync = promisify(execFile);
 const REPO = process.argv[2] ?? 'C:/dev/axune';
@@ -35,7 +36,12 @@ async function main() {
     isGitRepo: true,
   });
 
-  const port = await server.start(0);
+  // The well-known port, so a phone already paired with this machine can
+  // join the harness without rescanning a QR code.
+  const { port, wasPreferred } = await listenOnKnownPort(server);
+  if (!wasPreferred) {
+    console.log('note: the usual port was busy, so a paired phone cannot reach this run.');
+  }
   const payload = pairing.issue(port, 'axune');
   const phone = await connect(port);
 

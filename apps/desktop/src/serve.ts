@@ -18,9 +18,9 @@ import qrcode from 'qrcode-terminal';
 
 import { AxuneServer } from './core/AxuneServer';
 import { PairingManager, lanAddress } from './core/PairingManager';
+import { AXUNE_PORT } from './core/port';
 
 const execFileAsync = promisify(execFile);
-const PORT = 8790;
 
 async function main() {
   const repo = process.argv[2] ?? process.cwd();
@@ -37,7 +37,7 @@ async function main() {
   server.onEvent((event) => renderEvent(event));
   server.onConnectionChange((state) => console.log(`\n[axune] ${state}\n`));
 
-  const port = await server.start(PORT);
+  const port = await server.start(AXUNE_PORT);
   const payload = pairing.issue(port, basename(repo));
 
   console.log(`\n  Axune Desktop`);

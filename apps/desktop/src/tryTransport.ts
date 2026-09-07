@@ -17,6 +17,7 @@ import { WebSocket } from 'ws';
 
 import { AxuneServer } from './core/AxuneServer';
 import { PairingManager, lanAddress } from './core/PairingManager';
+import { listenOnKnownPort } from './core/port';
 
 const REPO = process.argv[2] ?? 'C:/dev/axune';
 const PROMPT =
@@ -31,7 +32,12 @@ async function main() {
     isGitRepo: true,
   });
 
-  const port = await server.start(0);
+  // The well-known port, so a phone already paired with this machine can
+  // join the harness without rescanning a QR code.
+  const { port, wasPreferred } = await listenOnKnownPort(server);
+  if (!wasPreferred) {
+    console.log('note: the usual port was busy, so a paired phone cannot reach this run.');
+  }
   const payload = pairing.issue(port, 'axune');
   console.log(`server   : ws://${lanAddress()}:${port}`);
   console.log(`qr token : ${payload.token.slice(0, 12)}…  (expires in 2 min)\n`);
@@ -40,7 +46,7 @@ async function main() {
   await check('unpaired socket is ignored', async () => {
     const sock = await connect(port);
     sock.send(JSON.stringify({ type: 'start_run', runId: 'x', sessionId: 'x', prompt: 'hi', agentIds: [], mode: 'independent' }));
-    const reply = await nextMessage(sock, 800);
+    const reply = await waitFor(sock, [], 800);
     sock.close();
     return reply === null ? 'no response, as required' : `LEAK: got ${reply.type}`;
   });
@@ -49,7 +55,7 @@ async function main() {
   await check('bad token rejected', async () => {
     const sock = await connect(port);
     sock.send(JSON.stringify({ type: 'pair', token: 'wrong', deviceName: 'fake', protocolVersion: 1 }));
-    const reply = await nextMessage(sock, 2000);
+    const reply = await waitFor(sock, ['pair_rejected', 'paired'], 5000);
     sock.close();
     return reply?.type === 'pair_rejected' ? `rejected: ${reply.reason}` : `UNEXPECTED: ${reply?.type}`;
   });
@@ -59,7 +65,7 @@ async function main() {
   let sessionToken = '';
   await check('valid token pairs', async () => {
     phone.send(JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'iPhone (fake)', protocolVersion: 1 }));
-    const reply = await nextMessage(phone, 20_000);
+    const reply = await waitFor(phone, ['paired', 'pair_rejected'], 20_000);
     if (reply?.type !== 'paired') return `UNEXPECTED: ${reply?.type}`;
     sessionToken = reply.sessionToken;
     const claude = reply.agents.find((a) => a.agentId === 'claude-code');
@@ -70,7 +76,7 @@ async function main() {
   await check('token cannot be reused', async () => {
     const sock = await connect(port);
     sock.send(JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'attacker', protocolVersion: 1 }));
-    const reply = await nextMessage(sock, 2000);
+    const reply = await waitFor(sock, ['pair_rejected', 'paired'], 5000);
     sock.close();
     return reply?.type === 'pair_rejected' ? `rejected: ${reply.reason}` : `LEAK: ${reply?.type}`;
   });
@@ -119,9 +125,9 @@ async function main() {
   await check(`reconnect replays events after seq ${cutoff}`, async () => {
     const reconnected = await connect(port);
     reconnected.send(JSON.stringify({ type: 'resume', token: sessionToken || 'unknown', runId, lastSeq: cutoff }));
-    const first = await nextMessage(reconnected, 3000);
+    const first = await waitFor(reconnected, ['resumed', 'pair_rejected'], 5000);
     reconnected.close();
-    if (first?.type === 'pair_rejected') return `rejected (expected — fake phone has no session token): ${first.reason}`;
+    if (first?.type === 'pair_rejected') return `FAIL: resume refused the session token from pairing (${first.reason})`;
     if (first?.type !== 'resumed') return `UNEXPECTED: ${first?.type}`;
     const expected = seen.filter((s) => s > cutoff).length;
     return first.missedEvents === expected
@@ -152,17 +158,38 @@ function connect(port: number): Promise<WebSocket> {
   });
 }
 
-function nextMessage(sock: WebSocket, timeoutMs: number): Promise<ServerMessage | null> {
+/**
+ * Wait for one of the message types under test.
+ *
+ * Deliberately not "the next message": the desktop pushes activity and branch
+ * updates unprompted, and an earlier version of this suite reported pairing as
+ * broken purely because the git watcher spoke first - which then cascaded into
+ * a false pass on the replay check, since no session token was ever captured.
+ *
+ * An empty `types` means any message at all, for the checks that assert
+ * silence.
+ */
+function waitFor(
+  sock: WebSocket,
+  types: readonly string[],
+  timeoutMs: number,
+): Promise<ServerMessage | null> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      sock.off('message', onMessage);
-      resolve(null);
-    }, timeoutMs);
-    const onMessage = (raw: unknown) => {
+    const finish = (result: ServerMessage | null) => {
       clearTimeout(timer);
       sock.off('message', onMessage);
-      resolve(JSON.parse(String(raw)) as ServerMessage);
+      resolve(result);
     };
+    const onMessage = (raw: unknown) => {
+      let message: ServerMessage;
+      try {
+        message = JSON.parse(String(raw)) as ServerMessage;
+      } catch {
+        return;
+      }
+      if (types.length === 0 || types.includes(message.type)) finish(message);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
     sock.on('message', onMessage);
   });
 }
