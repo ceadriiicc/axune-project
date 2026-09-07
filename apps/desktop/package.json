@@ -11,7 +11,8 @@
     "try:continuity": "tsx src/tryContinuity.ts",
     "try:write": "tsx src/tryWrite.ts",
     "build": "node build.mjs",
-    "app": "node build.mjs && electron ."
+    "app": "node build.mjs && electron .",
+    "try:restart": "tsx src/tryRestart.ts"
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",
