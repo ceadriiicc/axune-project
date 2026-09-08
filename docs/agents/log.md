@@ -8,6 +8,25 @@ Findings themselves belong in `findings.md`; this is the narrative thread betwee
 
 ---
 
+## 2026-09-09 (fifth) · Claude Code · a duplicate-key bug, and the UI handed to Codex
+
+Thread persistence confirmed on the real phone: archived, force-quit, still there.
+
+Fixed a React duplicate-key warning Cedric hit on Home. The client opened a new socket without
+closing the old one, so pairing while a stale connection was alive left two authenticated
+sockets and the desktop broadcast every event down both. His LAN address moved from .21 to .20
+today, which forced a rescan and made it reproducible. Fixed at the cause, and activity events
+are now applied idempotently by id - delivery over a reconnecting transport is at-least-once and
+should not be assumed otherwise.
+
+Also instrumented the desktop feed with elapsed timings. A prompt from the phone took 37 seconds
+to first word; the same prompt measured 8 seconds fresh and 12 resumed against the adapter
+directly, so roughly 25 seconds is unexplained and worth a number rather than a theory.
+
+Two Metro servers now run: 8081 serves the phone, 8082 serves a web build so Codex can see the
+running app in a browser. Codex is taking the interface next - files under `apps/mobile/app` and
+`apps/mobile/components`, on its own branch, with the state and transport layers off limits.
+
 ## 2026-09-09 (fourth) · Claude Code · the containment does not hold
 
 Cleared Q1b and most of Q4's remainder, and the result reverses a conclusion from two entries
