@@ -82,11 +82,11 @@ function statusLabel(status: LiveRun['status'], outcome: string | null): string 
 
 const styles = StyleSheet.create({
   panel: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: color.line,
-    backgroundColor: color.surface,
+    backgroundColor: color.panel,
     gap: spacing.sm,
   },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   status: { color: color.textMuted, fontSize: 12 },
-  bubble: { borderRadius: 16, padding: spacing.sm },
+  bubble: { borderRadius: radius.md, padding: spacing.sm },
   prompt: { backgroundColor: '#303842' },
   promptText: { color: color.text, fontSize: 13, lineHeight: 19 },
   answer: { fontSize: 13, lineHeight: 20 },

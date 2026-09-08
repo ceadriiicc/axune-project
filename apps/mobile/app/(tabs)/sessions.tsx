@@ -168,7 +168,7 @@ function outcomeColor(outcome: string): string {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: color.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  title: { color: color.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  title: { color: color.text, fontSize: 30, fontWeight: '800', letterSpacing: -1.1, marginTop: spacing.xs },
 
   empty: {
     marginTop: spacing.lg,
@@ -176,6 +176,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.line,
     padding: spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.025)',
     gap: 6,
   },
   emptyTitle: { color: color.text, fontSize: 15, fontWeight: '600' },
@@ -219,8 +220,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: 10,
   },
-  detailLabel: { color: color.textSoft, fontSize: 13 },
-  detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1 },
+  detailLabel: { color: color.textSoft, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.45 },
+  detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1, textAlign: 'right' },
   muted: { color: color.textSoft, fontSize: 13, paddingVertical: 10 },
   branchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 10 },
   branchCopy: { flex: 1 },

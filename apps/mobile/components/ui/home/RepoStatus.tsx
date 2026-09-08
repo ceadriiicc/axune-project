@@ -69,7 +69,7 @@ export function ago(at: number): string {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: color.line,
     backgroundColor: color.surface,
