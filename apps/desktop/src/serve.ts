@@ -38,29 +38,69 @@ async function main() {
   server.onConnectionChange((state) => console.log(`\n[axune] ${state}\n`));
 
   const port = await server.start(AXUNE_PORT);
-  const payload = pairing.issue(port, basename(repo));
 
-  console.log(`\n  Axune Desktop`);
+  console.log(`
+  Axune Desktop`);
   console.log(`  project : ${basename(repo)}  (${branch})`);
   console.log(`  path    : ${repo}`);
 
   const agents = await server.agentStatuses();
   for (const agent of agents) {
     console.log(
-      `  agent   : ${agent.agentId} ${agent.installed ? '●' : '○'} ${agent.version ?? 'not found'}`,
+      `  agent   : ${agent.agentId} ${agent.installed ? "●" : "○"} ${agent.version ?? 'not found'}`,
     );
   }
 
-  console.log(`  listening on ws://${lanAddress()}:${port}\n`);
-  console.log('  Scan this in Axune on your iPhone:\n');
+  console.log(`  listening on ws://${lanAddress()}:${port}
+`);
 
-  // The QR carries the whole payload, so the phone needs nothing typed in.
-  qrcode.generate(JSON.stringify(payload), { small: true }, (qr: string) => {
-    console.log(qr.replace(/^/gm, '  '));
-    const minutes = Math.round((payload.expiresAt - Date.now()) / 60_000);
-    console.log(`  code expires in ${minutes} minutes · single use`);
-    console.log('\n  Waiting for a phone…  (Ctrl+C to stop)\n');
-  });
+  /**
+   * Show a pairing code only when one is actually needed.
+   *
+   * A QR on screen is a credential sitting in the room, and printing one on
+   * every launch teaches the user to scan out of habit - which is how twelve
+   * live device tokens accumulated in a single evening. If a phone is already
+   * trusted, the honest thing to display is that it is expected back.
+   */
+  const showCode = () => {
+    const payload = pairing.issue(port, basename(repo));
+    console.log('  Scan this in Axune on your iPhone:');
+    console.log('');
+    qrcode.generate(JSON.stringify(payload), { small: true }, (qr: string) => {
+      console.log(qr.replace(/^/gm, '  '));
+      const minutes = Math.round((payload.expiresAt - Date.now()) / 60_000);
+      console.log(`  code expires in ${minutes} minutes, single use`);
+      console.log('');
+      console.log('  Waiting for a phone...  (Ctrl+C to stop)');
+      console.log('');
+    });
+  };
+
+  if (server.pairing.pairedCount === 0) {
+    showCode();
+  } else {
+    const n = server.pairing.pairedCount;
+    console.log(`  ${n} trusted ${n === 1 ? 'device' : 'devices'}, waiting for one to reconnect.`);
+    console.log('  No pairing code shown, because none is needed.');
+    console.log("  Press 'p' for a new code, or Ctrl+C to stop.");
+    console.log('');
+
+    // Only when a terminal is attached; piped output has no keypresses.
+    if (process.stdin.isTTY) {
+      const ETX = String.fromCharCode(3);
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.on('data', (chunk) => {
+        const key = String(chunk);
+        if (key === 'p' || key === 'P') {
+          console.log('');
+          showCode();
+        }
+        // Raw mode swallows the usual interrupt, so handle it here.
+        if (key === ETX) process.emit('SIGINT');
+      });
+    }
+  }
 
   process.on('SIGINT', () => {
     console.log('\n[axune] shutting down…');
