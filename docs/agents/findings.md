@@ -70,6 +70,8 @@ end - see Q7.
 | C24 | The binary contains `execpolicy_amend`, `execpolicy_amendment`, `proposed_e...` and `approved_f...`, suggesting an agent can **propose amendments to its own execution policy**. If so that is a self-widening path, and it needs understanding before Codex is trusted with write access. | **unverified** - strings only |
 | C25 | The `.rules` grammar is **Starlark**: an invalid file yields `starlark error: Parse error`, an empty file yields `{"matchedRules":[]}`. `program` is not a global, so the builtin vocabulary is unknown and nothing ships a `.rules` file to read one off. | **verified** (Starlark) / **unverified** (the vocabulary) |
 
+| C26 | **The Codex desktop app does not put `codex` on PATH.** The only real `codex.exe` on this machine sits at `%LOCALAPPDATA%/OpenAI/Codex/bin/<hash>/codex.exe`, under a content-hashed directory that will change on update, and `codex` is unrecognised in an ordinary PowerShell. `%APPDATA%/Roaming/npm` *is* on the user PATH, so `npm install -g @openai/codex` is what makes the CLI discoverable. This is a product requirement, not a convenience: `CodexAdapter.detect()` will run `codex --version` on PATH exactly as `ClaudeCodeAdapter` does, and the hashed path is not a usable fallback. | **verified** - `Get-EnvironmentVariable('PATH','User')`, plus a filesystem sweep finding one binary |
+
 ### The safety finding that governs how Codex must be run
 
 **An OS sandbox does not contain the tool surface.** A run explicitly passed
