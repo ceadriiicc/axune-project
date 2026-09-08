@@ -169,7 +169,11 @@ export type ActivityKind =
   | 'git.clean'
   | 'git.pushed'
   | 'device.paired'
-  | 'device.disconnected';
+  | 'device.disconnected'
+  /** A tool call the policy layer refused, kept with its reason. */
+  | 'policy.denied'
+  /** What a run sent off this machine: which files, how many bytes. */
+  | 'privacy.egress';
 
 /** The outcome of a write run: a branch, and what is on it. */
 export interface ChangeSet {
