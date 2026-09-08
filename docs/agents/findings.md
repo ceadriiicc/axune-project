@@ -72,6 +72,9 @@ end - see Q7.
 
 | C26 | **The Codex desktop app does not put `codex` on PATH.** The only real `codex.exe` on this machine sits at `%LOCALAPPDATA%/OpenAI/Codex/bin/<hash>/codex.exe`, under a content-hashed directory that will change on update, and `codex` is unrecognised in an ordinary PowerShell. `%APPDATA%/Roaming/npm` *is* on the user PATH, so `npm install -g @openai/codex` is what makes the CLI discoverable. This is a product requirement, not a convenience: `CodexAdapter.detect()` will run `codex --version` on PATH exactly as `ClaudeCodeAdapter` does, and the hashed path is not a usable fallback. | **verified** - `Get-EnvironmentVariable('PATH','User')`, plus a filesystem sweep finding one binary |
 
+| C27 | **Two more event types, found by hitting the usage limit.** A refused turn emits a **top-level** `{"type":"error","message":...}` - not an `item` - followed by `{"type":"turn.failed","error":{"message":...}}`. Neither was in the observed list, and both are terminal. A translator that only handles `item.*` and `turn.completed` would render this as a run that started and never ended: the phone would spin for ever. | **verified** - live run, 2026-09-09 |
+| C28 | **Codex usage can be exhausted in a single day of development, and resets monthly.** Roughly six probe runs on 2026-09-09 - one of them 190k input tokens - exhausted the allowance until 8 October, on both the CLI and the desktop app. The refusal is graceful and arrives as C27's events. | **verified** - `"You've hit your usage limit ... try again at Oct 8th, 2026 2:08 AM"` |
+
 ### The safety finding that governs how Codex must be run
 
 **An OS sandbox does not contain the tool surface.** A run explicitly passed
@@ -123,8 +126,12 @@ Top level: `thread.started` (carries `thread_id`), `turn.started`, `item.started
 Item types: `agent_message`, `command_execution` (with `command`, `aggregated_output`,
 `exit_code`), `mcp_tool_call`, `web_search`.
 
-Not yet seen and expected to exist: errors, interruptions, reasoning, file edits, todo/plan
-items. **unverified**
+Since confirmed (C27): a refused turn emits a **top-level** `error` and then `turn.failed`,
+neither of which is an `item`. So the top-level set is at least `thread.started`, `turn.started`,
+`item.started`, `item.completed`, `turn.completed`, `error` and `turn.failed`.
+
+Still unseen: interruption/cancellation, reasoning, file edits, and todo/plan items.
+**unverified**
 
 Note for whoever writes the translator: a failed command did **not** arrive as an event at all —
 it appeared only as a stderr log line from `codex_core::tools::router`. If that is the general

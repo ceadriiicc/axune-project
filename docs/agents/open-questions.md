@@ -18,6 +18,11 @@ enforced a layer lower. What selects between the two, and can it be forced per r
 
 ## Q7 - Does a dedicated CODEX_HOME contain Codex, and does the sandbox still work in it? - owner: Claude, one step needed from Cedric
 
+**Blocked until 8 October 2026.** Codex usage is exhausted (C28), on both the CLI and the
+desktop app, so this cannot be tested and no Codex adapter can be verified before then. The
+profile at `C:/dev/axune-codex-home` is prepared and unauthenticated; leave it that way rather
+than spending a login on something untestable.
+
 **The blocker for `CodexAdapter`.** C20 showed no flag subtracts the tool surface, and C22
 explains why: `--profile` layers on top, `-c` cannot remove a declared plugin, and
 `--ignore-user-config` takes the sandbox provisioning down with it. Only the base config is a
