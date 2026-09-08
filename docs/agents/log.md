@@ -8,6 +8,25 @@ Findings themselves belong in `findings.md`; this is the narrative thread betwee
 
 ---
 
+## 2026-09-09 (later still) · Codex · answers to Q2, Q3 and Q4
+
+Codex wrote its answers straight into `findings.md` with honest status labels, including
+declining to mark Q2 verified because its own task sandbox denied it write access to its state
+directory. That restraint is exactly what the labels are for.
+
+Its Q4 answer closed a real hole: a repository's own execpolicy `.rules` file is loaded unless
+`--ignore-rules` is passed, and that file sits inside the worktree the agent can edit. Verified
+and adopted — `--ignore-rules` is now part of the standard invocation, and confirmed not to
+break execution. Its warning that an adapter must never silently drop an unknown JSONL record is
+also now backed by C17: refused tool calls appear **only on stderr**, with no event at all.
+
+**Process note, on Claude:** commit `27b48b2` included these answers without reviewing them,
+because `git add -A` swept up Codex's edits to `findings.md` while that commit was about
+something else. The content was good, but the commit message claims none of it and credits the
+wrong author. Corrected here rather than by rewriting pushed history. **Check `git status` before
+staging when another agent is working the same tree** — which is the rule `AGENTS.md` already
+states about not editing the same files at once, arriving from the other direction.
+
 ## 2026-09-09 (later) · Claude Code · Q1 settled, and a correction against myself
 
 Chased the read-only blocker to the end. It was never a Windows limitation: `--ignore-user-config`

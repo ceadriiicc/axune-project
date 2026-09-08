@@ -22,7 +22,20 @@ C12's run showed no `web_search` and no `mcp_tool_call`, but the prompt did not 
 Re-probe with a question that actively tempts a web search, and confirm the `-c` overrides
 suppress it rather than the model simply not bothering.
 
-## Q2 — The complete `codex exec --json` event and item schema · owner: Codex
+## Q2 — The complete `codex exec --json` event and item schema · owner: Codex · **partly answered**
+
+Codex answered in `findings.md` and honestly declined to mark it verified: its own task sandbox
+denied it write access to its state directory, so it could not run the probe. What it did settle
+is that the CLI publishes no schema, so this can only be established by exercising each terminal
+case. Its guidance stands and should shape the adapter: **retain an unknown JSONL record as
+diagnostic data and emit an Axune `error`, never drop it silently.**
+
+Claude has since verified the sharpest part (C17): a rejected command and a rejected patch both
+appeared **only on stderr**, with no `item` event at all. So the translator must read stderr as
+well as stdout, or a refused tool call will look like a run that did nothing.
+
+Still needed: errors, cancellation, reasoning, file edits, and plan/todo items, exercised in a
+writable test environment.
 
 Needed before the translator can be trusted. See the observed-so-far list in `findings.md`.
 Specifically: the full set of top-level `type` values and `item.type` values, what an error or
@@ -30,13 +43,28 @@ an interruption looks like, and whether tool failures appear in the JSONL at all
 stderr log lines from `codex_core::tools::router` — the latter is what was observed, and it
 would change how the adapter reads failures.
 
-## Q3 — What does `--approve-for-me` actually approve? · owner: Codex
+## Q3 — What does `--approve-for-me` actually approve? · owner: Codex · **answered, now moot**
+
+Codex established from the local help that it is workspace-write auto-approval by an
+unidentified reviewer, and correctly concluded it cannot serve as an Axune safety control. C12
+then removed the need for it entirely (C19), so Axune will not use it. Left recorded so nobody
+reaches for it later without reading why.
 
 It is currently the only mode in which Codex runs at all, so this is a hole in the safety story
 until answered (C6). What performs the review, does it invoke a model, and can it approve
 something a person would refuse? If it can, Axune needs its own boundary above it.
 
-## Q4 — Format and precedence of execpolicy `.rules` files · owner: Codex
+## Q4 — Format and precedence of execpolicy `.rules` files · owner: Codex · **partly answered, acted on**
+
+Codex found `codex execpolicy check --rules <PATH> <COMMAND>...`, verified since as C16, and made
+the point that decided the design: **a repository-controlled `.rules` file is editable by the
+very worktree the agent can change**, so it can never be Axune's boundary. `--ignore-rules` is
+now part of the standard invocation.
+
+Still open: the rule grammar, its expressiveness, discovery locations and user-versus-project
+precedence. Nothing ships a `.rules` file to read one off. The test that would settle it is a
+breach attempt — write a deliberately permissive project `.rules`, then confirm a denied command
+stays denied both with and without `--ignore-rules`.
 
 Axune enforces a command allow-list in-process for Claude Code and would rather push that down
 into Codex's own enforcement than reimplement it. Can a project-level `.rules` file express an

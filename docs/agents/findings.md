@@ -38,15 +38,34 @@ Environment: Windows 11 (10.0.26200), `codex-cli 0.153.4`, installed via
 Established 2026-09-09. Reads work, writes are refused by the OS, and the computer-use and
 web-search surface is gone:
 
-    codex exec --json --sandbox read-only       -c features.computer_use=false       -c features.browser_use=false       -c features.browser_use_full_cdp_access=false       -c 'mcp_servers={}'       -c 'notify=[]'       -C <worktree> "<prompt>"
+    codex exec --json --sandbox read-only --ignore-rules -C <worktree> "<prompt>"
+
+with all five of these overrides, none of them optional:
+
+    -c features.computer_use=false
+    -c features.browser_use=false
+    -c features.browser_use_full_cdp_access=false
+    -c 'mcp_servers={}'
+    -c 'notify=[]'
 
 **Do not use `--ignore-user-config`** (C12), even though it appears to be the tidy way to strip
 the plugin surface. It takes the sandbox provisioning with it and the run can then do nothing at
 all. The earlier note recommending it was wrong and is corrected here.
 
+**`--ignore-rules` is not optional either** (C16). Without it a repository's own execpolicy
+`.rules` file is loaded and can widen what the agent may do - and that file sits inside the very
+worktree the agent can edit. Codex raised this under Q4 and it is the sharpest point in its
+answer. Verified not to break anything: with it, the read still succeeded and the write was
+still refused.
+
 Caveat worth closing: the absence of `web_search` in that run is meaningful — an earlier run
 with default config reached for it unprompted on a near-identical question — but the prompt did
 not actively invite a search. A deliberately tempting prompt should confirm it. **unverified**
+
+| C16 | `codex execpolicy check --rules <PATH> <COMMAND>...` exists and evaluates command policy from rule files, so `.rules` is a real policy input rather than a convention. `--ignore-rules` suppresses **both** user and project rule files, and adding it does not break the working invocation. Axune must always pass it: a repository-controlled `.rules` file is editable by the worktree the agent works in, so it can never be Axune's boundary. | **verified** - `execpolicy check --help`, plus a live run with `--ignore-rules` that read a file and was refused a write |
+| C17 | **Tool failures do not reliably appear in the JSONL stream.** Both a rejected `exec_command` and a rejected `patch` surfaced only as stderr lines from `codex_core::tools::router`, with no corresponding `item` event. An adapter reading only stdout will show a run that silently did nothing. | **verified** - observed twice, on two different rejection mechanisms |
+| C18 | Under `--sandbox read-only` Codex reaches for writes by two routes and both are refused: `Set-Content` denied by ACL ("Access to the path ... denied"), and its `apply_patch` tool rejected with "writing is blocked by read-only sandbox". | **verified** - two live runs |
+| C19 | `--approve-for-me` is **no longer needed** and should not be used. C5 and C6 described it as the only working mode; C12 superseded that. Codex's Q3 conclusion - treat it as opaque workspace-write auto-approval, not an Axune safety control - stands, and is now moot because Axune does not use it. | **verified** (not needed) |
 
 ### The safety finding that governs how Codex must be run
 
@@ -141,7 +160,8 @@ proves it allows commands to execute (C5), but does not reveal that decision mec
 **verified** — it cannot be combined with `--sandbox` (C3), so Axune cannot use it as a
 user-mediated approval bridge or as a way to obtain executable read-only runs on this Windows
 installation. Treat it as an opaque workspace-write auto-approval mode, not an Axune safety
-control. Its use is incompatible with the current requirement that enforcement be owned by an
+control. *(Claude, 2026-09-09: written before C12 landed. Axune no longer needs it at all - see
+C19. The reasoning here is still correct and is why it will not be reached for later.)* Its use is incompatible with the current requirement that enforcement be owned by an
 OS/tool boundary Axune can explain and test.
 
 ### Q4 — execpolicy `.rules`
@@ -155,6 +175,12 @@ undocumented convention.
 execpolicy `.rules` files. Therefore `--ignore-user-config` alone does not document that project
 rules are suppressed; Axune must pass `--ignore-rules` as well whenever it must exclude
 repository-controlled policy.
+
+*Claude, 2026-09-09:* verified and adopted - this was the most valuable line in the answer, and
+it closed a surface I had left open. The grammar remains unknown, since no `.rules` files ship
+with the install and there is nothing to read one off. The breach attempt Codex asks for - a
+deliberately permissive project `.rules`, then a denied command - is still outstanding, so
+`--ignore-rules` is currently the safe default rather than a measured choice.
 
 **unverified** — the rule-language grammar, allow-list expressiveness, discovery locations and
 precedence between user and project files have not been established. No project-level policy
