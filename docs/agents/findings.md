@@ -201,3 +201,66 @@ against a minimal allow and deny policy in a writable, isolated test directory, 
 live `codex exec` run that attempts a denied command. In particular, a repository-controlled
 `.rules` file is not trustworthy as Axune's own policy: it is editable by the very worktree the
 agent can change.
+
+---
+
+## Fresh `CODEX_HOME` and embedding questions · 2026-09-09
+
+### Q7 — Does a minimal fresh `CODEX_HOME` re-provision bundled tools?
+
+**unverified — this is the critical remaining experiment.** The test needs a fresh, durable
+`CODEX_HOME` containing the minimal base config and a copy of the authenticated user's
+`auth.json`; a truly empty home is necessarily logged out (C21) and does not answer the tool
+question. The CLI allowance was exhausted before the isolated `codex exec` breach test could be
+run (C28), so this must not be inferred from `login status` or from the config's appearance.
+
+The test's pass condition is deliberately narrow: after the first real run, inspect that new
+home for marketplace/plugin/MCP provisioning and use the same tempting prompt from C20. A pass
+requires *no* `web_search`, computer-use, browser, plugin, or MCP call while ordinary sandboxed
+file reads still work. Any automatic provisioning or callable tool makes this approach unusable
+for Axune. Do not ship before this is run after the usage reset.
+
+### Q8 — Supported no-plugin/no-MCP `codex exec` while sandbox roots still work?
+
+**documented — no such `codex exec` switch is exposed by local CLI help in 0.153.4.** The
+documented controls are `--ignore-user-config` (which C12 proves also removes sandbox-root
+provisioning), `--ignore-rules`, a layering `--profile`, individual config overrides, and the
+separate `plugin`/`mcp` management commands. `codex exec --help` does not expose `--no-plugins`,
+`--no-mcp`, a marketplace-disable flag, or a tool allow-list.
+
+**unverified — absence from help is not proof that no supported config key exists.** No official
+documentation or local schema found in this investigation identifies a key that disables all
+plugin marketplaces while retaining normal base-config loading and sandbox provisioning. Until
+Q7 is live-tested, the dedicated minimal `CODEX_HOME` remains the only plausible route, not a
+supported guarantee.
+
+### Q9 — Why does `--ignore-user-config` remove sandbox-root provisioning?
+
+**verified (behaviour) / unverified (reason and intent).** C12 establishes the behaviour:
+`--ignore-user-config` strips the tool surface but leaves the Windows sandbox with no usable
+read/write roots, so every child process is refused. Local `codex exec --help` explicitly says
+the flag does not load `$CODEX_HOME/config.toml` while authentication still uses `CODEX_HOME`.
+That explains the apparent asymmetry mechanically, but not why sandbox-root setup depends on
+the skipped configuration.
+
+There is no local help text or official OpenAI documentation located here saying this is
+intentional. Treat it as an undocumented coupling — possibly a defect, possibly a bootstrap
+assumption — and do not rely on it as a stable API. It should be reported to OpenAI with the C12
+reproduction once the minimal-home experiment has separated configuration provisioning from
+plugin provisioning.
+
+### Q10 — First-class headless/embedding mode with a host-controlled tool surface?
+
+**documented — Codex has host-facing transports, but not the requested control boundary.**
+`codex mcp-server` is documented locally as “Start Codex as an MCP server (stdio)”.
+`codex app-server` and `codex exec-server` exist but are explicitly marked experimental; the
+app server supports stdio, Unix, and WebSocket transports and can generate protocol bindings/
+schemas. These are genuine integration surfaces, not a need to scrape terminal text.
+
+**unverified — none of the local help or official documentation found establishes that these
+servers let an embedding host supply an authoritative tool allow-list or suppress all bundled
+plugins/MCP servers.** Their help still accepts normal configuration overrides and exposes no
+host-owned tool-policy argument. Therefore Axune should not migrate to either merely because it
+is an embedding protocol: first exercise its schema and prove the exact tool surface under a
+minimal `CODEX_HOME`. Today, `codex exec --json` remains the only established run interface;
+`mcp-server`/`app-server` are promising experimental candidates, not a security solution.
