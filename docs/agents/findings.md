@@ -33,39 +33,42 @@ Environment: Windows 11 (10.0.26200), `codex-cli 0.153.4`, installed via
 | C14 | `codex-windows-sandbox-setup.exe` is **not** a user-facing installer. Run bare it exits with `helper_request_args_failed: expected payload argument`. It is internal plumbing driven by an orchestrator, like `codex sandbox` needing `--sandbox-state-json`. It does not require elevation to start. | **verified** — run from an administrator PowerShell, 2026-09-09 |
 | C15 | The firewall rules for `CodexSandboxOffline` block outbound and loopback traffic. If a Codex run can be made to execute as the offline user, **network egress is denied by the OS** rather than by tool policy — the control Axune enforces for Claude Code by switching `WebFetch`/`WebSearch` off. Which sandbox mode selects which user is not yet established. | **verified** (the rules) / **unverified** (how to select the offline user) |
 
-### The invocation Axune should use
+### The invocation Axune should use - NOT YET SETTLED
 
-Established 2026-09-09. Reads work, writes are refused by the OS, and the computer-use and
-web-search surface is gone:
+**Superseded 2026-09-09. Do not use the flag set previously recorded here: it does not contain
+Codex.** What is established:
 
     codex exec --json --sandbox read-only --ignore-rules -C <worktree> "<prompt>"
 
-with all five of these overrides, none of them optional:
+gives correct *filesystem* behaviour - reads succeed, writes are refused by the operating system
+(C12, C18). It does **not** remove the computer-use, browser or web-search surface (C20). Both
+halves are needed and only one is solved.
 
-    -c features.computer_use=false
-    -c features.browser_use=false
-    -c features.browser_use_full_cdp_access=false
-    -c 'mcp_servers={}'
-    -c 'notify=[]'
+The previous version of this section claimed the tool surface was gone, on the strength of a run
+in which it simply went unused. It carried a caveat saying a tempting prompt should confirm it.
+That caveat was right: the tempting prompt was run, and the surface was fully available.
+**Absence of use is not absence of capability.**
 
-**Do not use `--ignore-user-config`** (C12), even though it appears to be the tidy way to strip
-the plugin surface. It takes the sandbox provisioning with it and the run can then do nothing at
-all. The earlier note recommending it was wrong and is corrected here.
+**Do not use `--ignore-user-config`** (C12). It does strip the tool surface, and it also strips
+the sandbox's read/write root provisioning, so the run can then execute nothing at all. That is
+the trap in this whole area: the two problems have opposite fixes.
 
-**`--ignore-rules` is not optional either** (C16). Without it a repository's own execpolicy
-`.rules` file is loaded and can widen what the agent may do - and that file sits inside the very
-worktree the agent can edit. Codex raised this under Q4 and it is the sharpest point in its
-answer. Verified not to break anything: with it, the read still succeeded and the write was
-still refused.
+`--ignore-rules` is retained (C16). It costs nothing and closes off a repository-controlled
+policy file, although no project `.rules` discovery was observed at four plausible locations
+(C23).
 
-Caveat worth closing: the absence of `web_search` in that run is meaningful — an earlier run
-with default config reached for it unprompted on a near-identical question — but the prompt did
-not actively invite a search. A deliberately tempting prompt should confirm it. **unverified**
+**The candidate answer is a dedicated `CODEX_HOME`** (C21): a profile directory whose *base*
+config declares no plugins and no MCP servers, so there is nothing to override and nothing to
+strip. `-c` overrides cannot subtract a declared plugin (C20) and `-p/--profile` only layers on
+top of the base (C22), so a different base config is the only remaining lever. Untested end to
+end - see Q7.
 
-| C16 | `codex execpolicy check --rules <PATH> <COMMAND>...` exists and evaluates command policy from rule files, so `.rules` is a real policy input rather than a convention. `--ignore-rules` suppresses **both** user and project rule files, and adding it does not break the working invocation. Axune must always pass it: a repository-controlled `.rules` file is editable by the worktree the agent works in, so it can never be Axune's boundary. | **verified** - `execpolicy check --help`, plus a live run with `--ignore-rules` that read a file and was refused a write |
-| C17 | **Tool failures do not reliably appear in the JSONL stream.** Both a rejected `exec_command` and a rejected `patch` surfaced only as stderr lines from `codex_core::tools::router`, with no corresponding `item` event. An adapter reading only stdout will show a run that silently did nothing. | **verified** - observed twice, on two different rejection mechanisms |
-| C18 | Under `--sandbox read-only` Codex reaches for writes by two routes and both are refused: `Set-Content` denied by ACL ("Access to the path ... denied"), and its `apply_patch` tool rejected with "writing is blocked by read-only sandbox". | **verified** - two live runs |
-| C19 | `--approve-for-me` is **no longer needed** and should not be used. C5 and C6 described it as the only working mode; C12 superseded that. Codex's Q3 conclusion - treat it as opaque workspace-write auto-approval, not an Axune safety control - stands, and is now moot because Axune does not use it. | **verified** (not needed) |
+| C20 | **`-c features.computer_use=false`, `-c features.browser_use=false` and `-c 'mcp_servers={}'` do not disable those tools.** Under all five overrides plus `--sandbox read-only --ignore-rules`, a deliberately tempting prompt ran `web_search`, made four `cua_repl` computer-use calls, read the computer-use plugin's own docs off disk, and attempted to open a Chrome tab. An earlier run that looked clean had simply not tempted it. | **verified by breach attempt** - 2026-09-09 |
+| C21 | `CODEX_HOME` isolates **both** configuration and authentication: a fresh directory reports "Not logged in" while the real one reports "Logged in using ChatGPT". So a dedicated Axune profile can present a minimal base config with no plugins and no MCP servers. It **refuses to sit under a temp directory** ("Refusing to create helper binaries under temporary dir"), so it needs a real path such as `%LOCALAPPDATA%/Axune/codex-home`. | **verified** - `codex login status` under both homes |
+| C22 | `-p/--profile` **layers on top of** the base user config, so it can raise a setting but cannot remove a plugin or MCP server the base declares. With C20, no flag subtracts the tool surface - only a different base config can. | **documented** - `codex exec --help` |
+| C23 | An invalid `.rules` file planted at `<repo>/.rules`, `<repo>/default.rules`, `<repo>/.codex/.rules` and `<repo>/.codex/default.rules` produced **no parse error and no observable effect**. Project-rule discovery does not use those paths in this configuration. A negative result: it does not prove the mechanism inert, only that those four paths are not it. | **verified** (those paths) / **unverified** (the mechanism) |
+| C24 | The binary contains `execpolicy_amend`, `execpolicy_amendment`, `proposed_e...` and `approved_f...`, suggesting an agent can **propose amendments to its own execution policy**. If so that is a self-widening path, and it needs understanding before Codex is trusted with write access. | **unverified** - strings only |
+| C25 | The `.rules` grammar is **Starlark**: an invalid file yields `starlark error: Parse error`, an empty file yields `{"matchedRules":[]}`. `program` is not a global, so the builtin vocabulary is unknown and nothing ships a `.rules` file to read one off. | **verified** (Starlark) / **unverified** (the vocabulary) |
 
 ### The safety finding that governs how Codex must be run
 

@@ -8,6 +8,33 @@ Findings themselves belong in `findings.md`; this is the narrative thread betwee
 
 ---
 
+## 2026-09-09 (fourth) · Claude Code · the containment does not hold
+
+Cleared Q1b and most of Q4's remainder, and the result reverses a conclusion from two entries
+ago. **The `-c` overrides do not disable computer use, browser control or web search.** A
+tempting prompt got all of them: `web_search` ran, `cua_repl` was called four times, and Codex
+attempted to open a Chrome tab - with every override set.
+
+The earlier run that looked clean had simply not asked for any of it. The caveat attached to that
+finding said a tempting prompt should confirm it, and it was right to be there. Recorded plainly,
+because this is the second time in one day that absence of evidence got written down as evidence
+of absence. The findings section recommending those flags is now marked NOT YET SETTLED: a future
+session reading it would have shipped an adapter that can reach the user's desktop from a phone.
+
+Also settled, cheaply and mostly without model runs: the `.rules` grammar is Starlark (C25); an
+invalid `.rules` at four plausible paths has no effect (C23); `-p/--profile` only layers on top
+of the base config, so it cannot subtract a plugin (C22); and `CODEX_HOME` isolates both config
+and auth (C21). That last is the way out - the base config is the only lever that removes a tool
+rather than asking it not to be used.
+
+Prepared `%LOCALAPPDATA%/Axune/codex-home/config.toml` with everything dangerous **absent**
+rather than disabled. It needs one login from Cedric before it can be tested. Continues as Q7,
+which now blocks `CodexAdapter`.
+
+Noticed in passing: `execpolicy_amendment` and `proposed_*` strings hint that an agent can
+propose amendments to its own execution policy (C24). If real, that outranks the grammar
+question.
+
 ## 2026-09-09 (later still) · Codex · answers to Q2, Q3 and Q4
 
 Codex wrote its answers straight into `findings.md` with honest status labels, including

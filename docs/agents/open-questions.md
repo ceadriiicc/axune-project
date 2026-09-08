@@ -16,11 +16,43 @@ user does not (C15). If Axune can pin a run to the offline user, network egress 
 OS — the control Axune enforces for Claude Code by switching `WebFetch`/`WebSearch` off, only
 enforced a layer lower. What selects between the two, and can it be forced per run?
 
-## Q1b — Confirm the tool surface is gone, not merely unused · owner: Claude
+## Q7 - Does a dedicated CODEX_HOME contain Codex, and does the sandbox still work in it? - owner: Claude, one step needed from Cedric
 
-C12's run showed no `web_search` and no `mcp_tool_call`, but the prompt did not invite either.
-Re-probe with a question that actively tempts a web search, and confirm the `-c` overrides
-suppress it rather than the model simply not bothering.
+**The blocker for `CodexAdapter`.** C20 showed no flag subtracts the tool surface, and C22
+explains why: `--profile` layers on top, `-c` cannot remove a declared plugin, and
+`--ignore-user-config` takes the sandbox provisioning down with it. Only the base config is a
+real lever, and `CODEX_HOME` selects the base config (C21).
+
+A profile is prepared at `%LOCALAPPDATA%/Axune/codex-home/config.toml`, declaring
+`sandbox_mode = "read-only"`, `approval_policy = "never"`, an empty `[mcp_servers]`, and the
+computer-use and browser features off. Everything dangerous is **absent** rather than switched
+off, which is the difference between an allow-list and a policy.
+
+It cannot be used until it is authenticated, and no credential may pass through Axune, so Cedric
+runs one login against that profile:
+
+    $env:CODEX_HOME = "$env:LOCALAPPDATA/Axune/codex-home"
+    codex login
+
+Then two things need verifying, in order:
+
+1. **Re-run the breach attempt** - the same tempting prompt as C20, asking for a web search, a
+   browser tab and a desktop screenshot. If `web_search` or `cua_repl` appears, the base-config
+   approach has failed too and Codex is not safe for Axune at any known setting.
+2. **Confirm the sandbox still provisions** under the new home. Its state lives in
+   `<CODEX_HOME>/.sandbox`, so it will be built fresh. Reads must work and a write must still be
+   refused by the OS, as in C12 and C18.
+
+## Q1b - Confirm the tool surface is gone, not merely unused - owner: Claude - **answered: it is NOT**
+
+**Answered 2026-09-09, and the answer is bad.** The overrides suppress nothing. Given a prompt
+asking for a web search, a browser tab and a desktop screenshot, Codex ran `web_search`, made
+four `cua_repl` computer-use calls, read the computer-use plugin's docs off disk, and attempted
+to open a Chrome tab - with all five overrides set. See C20.
+
+The earlier clean-looking run had simply never asked for those things. The clearest case yet for
+the house rule: **test enforcement by attempting a breach, never by noticing that nothing bad
+happened.** Continues as Q7.
 
 ## Q2 — The complete `codex exec --json` event and item schema · owner: Codex · **partly answered**
 
@@ -61,10 +93,17 @@ the point that decided the design: **a repository-controlled `.rules` file is ed
 very worktree the agent can change**, so it can never be Axune's boundary. `--ignore-rules` is
 now part of the standard invocation.
 
-Still open: the rule grammar, its expressiveness, discovery locations and user-versus-project
-precedence. Nothing ships a `.rules` file to read one off. The test that would settle it is a
-breach attempt — write a deliberately permissive project `.rules`, then confirm a denied command
-stays denied both with and without `--ignore-rules`.
+Partly closed by Claude, 2026-09-09. The grammar is **Starlark** (C25), but `program` is not a
+global, so the vocabulary is unknown and nothing ships a file to read one off. An invalid
+`.rules` planted at four plausible paths had **no effect at all** (C23), so discovery does not
+use those paths here - a negative result that narrows the search without closing it.
+
+`--ignore-rules` stays in the invocation regardless: it costs nothing and the reasoning holds
+whether or not the paths are found.
+
+Newly opened by this work: **C24** - the binary contains `execpolicy_amendment` and
+`proposed_*`/`approved_*` strings, suggesting an agent may be able to propose amendments to its
+own execution policy. If that is real, it matters more than the grammar does.
 
 Axune enforces a command allow-list in-process for Claude Code and would rather push that down
 into Codex's own enforcement than reimplement it. Can a project-level `.rules` file express an
