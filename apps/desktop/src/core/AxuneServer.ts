@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { hostname, platform } from 'node:os';
 
-import { ClaudeCodeAdapter, type RunningRun } from '@axune/agent-core';
+import { ClaudeCodeAdapter, type AgentAdapter, type RunningRun } from '@axune/agent-core';
 import { WorktreeManager, type Worktree } from '@axune/git-core';
 import {
   PROTOCOL_VERSION,
   type Capability,
   type MachineSummary,
   type AgentEvent,
+  type AgentId,
   type AgentStatus,
   type ClientMessage,
   type ProjectSummary,
@@ -32,7 +33,18 @@ import { SessionStore } from './SessionStore';
 export class AxuneServer {
   private wss: WebSocketServer | null = null;
   private readonly registry = new RunRegistry();
-  private readonly claude = new ClaudeCodeAdapter();
+  /**
+   * Every adapter this desktop can drive, keyed by the id the phone asks for.
+   *
+   * Deliberately a map rather than a field per provider: the phone already
+   * sends `agentIds` and this is what makes the desktop honour it. Until now
+   * that field was accepted and ignored, and every run went to Claude Code
+   * whatever was requested - which meant a second agent could not have been
+   * reached even once its adapter existed.
+   */
+  private readonly adapters = new Map<AgentId, AgentAdapter>([
+    ['claude-code', new ClaudeCodeAdapter()],
+  ]);
   private readonly running = new Map<string, RunningRun>();
   /** Sockets that have completed pairing, with their session token. */
   private readonly authed = new WeakMap<WebSocket, string>();
@@ -145,15 +157,19 @@ export class AxuneServer {
   }
 
   async agentStatuses(): Promise<AgentStatus[]> {
-    const detection = await this.claude.detect();
-    return [
-      {
-        agentId: 'claude-code',
-        installed: detection.installed,
-        version: detection.version,
-        authenticated: detection.authenticated,
-      },
-    ];
+    // Detected in parallel: each one shells out to a CLI, and the phone should
+    // not wait for them in series to draw its status row.
+    return Promise.all(
+      [...this.adapters].map(async ([agentId, adapter]) => {
+        const detection = await adapter.detect();
+        return {
+          agentId,
+          installed: detection.installed,
+          version: detection.version,
+          authenticated: detection.authenticated,
+        };
+      }),
+    );
   }
 
   private onConnection(socket: WebSocket): void {
@@ -279,18 +295,40 @@ export class AxuneServer {
 
     this.registry.open(message.runId);
 
+    // Honour what the phone asked for. Paired Mode fans one prompt out to
+    // several agents at once and is not built, so more than one id is refused
+    // rather than quietly answered by a single agent — a phone showing one
+    // reply to a paired request would look like the feature works.
+    const requested = message.agentIds ?? [];
+    if (requested.length > 1) {
+      return this.failRun(
+        message,
+        'claude-code',
+        'Running several agents on one prompt is not built yet. Ask one agent at a time.',
+      );
+    }
+    const agentId: AgentId = requested[0] ?? 'claude-code';
+    const adapter = this.adapters.get(agentId);
+    if (!adapter) {
+      return this.failRun(
+        message,
+        agentId,
+        `This desktop has no adapter for ${agentId}. Installed: ${[...this.adapters.keys()].join(', ')}.`,
+      );
+    }
+
     // A write run gets its own branch and directory. Failing to create one is
     // not a reason to fall back to editing the user's tree — the run simply
     // stays read-only, which is the safe direction to fail in.
     let worktree: Worktree | null = null;
     if (message.write && this.project.isGitRepo) {
       worktree = await this.worktrees
-        .create('claude-code', message.runId)
+        .create(agentId, message.runId)
         .catch(() => null);
     }
     const writing = Boolean(worktree);
 
-    const run = this.claude.start(
+    const run = adapter.start(
       {
         runId: message.runId,
         sessionId: message.sessionId,
@@ -301,7 +339,7 @@ export class AxuneServer {
         readOnly: !writing,
         // Continue the same provider conversation when we have seen this Axune
         // session before, so the agent remembers the previous prompt.
-        resumeSessionId: this.store.providerSession(message.sessionId, 'claude-code'),
+        resumeSessionId: this.store.providerSession(message.sessionId, agentId),
       },
       (event: AgentEvent) => {
         this.registry.record(event);
@@ -331,12 +369,45 @@ export class AxuneServer {
         if (handle.providerSessionId) {
           this.store.rememberProviderSession(
             message.sessionId,
-            'claude-code',
+            agentId,
             handle.providerSessionId,
           );
         }
       })
       .finally(() => this.running.delete(message.runId));
+  }
+
+  /**
+   * Refuse a run the desktop cannot serve, in the run's own event stream.
+   *
+   * The phone shows a prompt the instant it is sent, so a request that is
+   * simply dropped leaves a bubble that spins for ever. It has to come back as
+   * a finished, failed run with a reason a person can act on.
+   */
+  private failRun(
+    message: Extract<ClientMessage, { type: 'start_run' }>,
+    agentId: AgentId,
+    reason: string,
+  ): void {
+    let seq = 0;
+    const emit = (body: { type: 'error'; message: string; recoverable: boolean } | { type: 'run_finished'; outcome: 'failed' }) => {
+      const event = {
+        seq: seq++,
+        runId: message.runId,
+        sessionId: message.sessionId,
+        agentId,
+        ts: Date.now(),
+        ...body,
+      } as AgentEvent;
+      this.registry.record(event);
+      this.broadcast({ type: 'event', event });
+      for (const listener of this.eventListeners) listener(event);
+    };
+
+    // No need to open the run explicitly: record() does it.
+    emit({ type: 'error', message: reason, recoverable: false });
+    emit({ type: 'run_finished', outcome: 'failed' });
+    this.activity.record('run.failed', reason, truncate(message.prompt));
   }
 
   /**

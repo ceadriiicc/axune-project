@@ -90,6 +90,67 @@ async function main() {
       : `FAIL: got ${reply?.type ?? 'nothing'}`;
   });
 
+  // ---- the desktop must route a run to the agent that was asked for ----
+  // `agentIds` was accepted and ignored until 2026-09-09: every run went to
+  // Claude Code whatever the phone requested, so a second agent could not have
+  // been reached even once its adapter existed. Both refusals below have to
+  // arrive as a finished run, because the phone renders the prompt the moment
+  // it is sent and a dropped request spins for ever.
+  await check('a run for an agent with no adapter is refused, not dropped', async () => {
+    const sock = await connect(portB);
+    sock.send(JSON.stringify({ type: 'resume', token: sessionToken, runId: 'none', lastSeq: -1 }));
+    if (!(await waitFor(sock, ['resumed'], 5000))) {
+      sock.close();
+      return 'FAIL: could not resume to send the run';
+    }
+    sock.send(
+      JSON.stringify({
+        type: 'start_run',
+        runId: 'unknown-agent-run',
+        sessionId: 'routing-test',
+        prompt: 'anything',
+        agentIds: ['codex'],
+        mode: 'independent',
+        write: false,
+      }),
+    );
+    const outcome = await runOutcome(sock, 'unknown-agent-run', 8000);
+    sock.close();
+    if (!outcome) return 'FAIL: the run never finished - the phone would spin';
+    if (outcome.finished !== 'failed') return `FAIL: outcome was ${outcome.finished}`;
+    if (!/no adapter for codex/i.test(outcome.error ?? '')) {
+      return `FAIL: unhelpful reason - ${outcome.error ?? 'none given'}`;
+    }
+    return `refused: ${outcome.error}`;
+  });
+
+  await check('a paired-mode request is refused rather than half-answered', async () => {
+    const sock = await connect(portB);
+    sock.send(JSON.stringify({ type: 'resume', token: sessionToken, runId: 'none', lastSeq: -1 }));
+    if (!(await waitFor(sock, ['resumed'], 5000))) {
+      sock.close();
+      return 'FAIL: could not resume to send the run';
+    }
+    sock.send(
+      JSON.stringify({
+        type: 'start_run',
+        runId: 'paired-run',
+        sessionId: 'routing-test',
+        prompt: 'anything',
+        agentIds: ['claude-code', 'codex'],
+        mode: 'paired',
+        write: false,
+      }),
+    );
+    const outcome = await runOutcome(sock, 'paired-run', 8000);
+    sock.close();
+    if (outcome?.finished !== 'failed') return `FAIL: outcome was ${outcome?.finished ?? 'never'}`;
+    if (!/one agent at a time/i.test(outcome.error ?? '')) {
+      return `FAIL: unhelpful reason - ${outcome.error ?? 'none given'}`;
+    }
+    return `refused: ${outcome.error}`;
+  });
+
   await second.stop();
 
   // ---- the trusted list must not grow without limit --------------------
@@ -166,6 +227,40 @@ async function check(name: string, run: () => Promise<string>): Promise<void> {
     failures += 1;
     console.log(`  ✗ ${name}\n      threw: ${String(error)}`);
   }
+}
+
+/**
+ * Follow one run's events to its terminal state.
+ *
+ * Returns null if the run never finished, which is the failure worth catching:
+ * a request the desktop silently drops leaves the phone spinning.
+ */
+function runOutcome(
+  sock: WebSocket,
+  runId: string,
+  timeoutMs: number,
+): Promise<{ finished: string; error?: string } | null> {
+  return new Promise((resolve) => {
+    let error: string | undefined;
+    const finish = (result: { finished: string; error?: string } | null) => {
+      clearTimeout(timer);
+      sock.off('message', onMessage);
+      resolve(result);
+    };
+    const onMessage = (raw: unknown) => {
+      let message: ServerMessage;
+      try {
+        message = JSON.parse(String(raw)) as ServerMessage;
+      } catch {
+        return;
+      }
+      if (message.type !== 'event' || message.event.runId !== runId) return;
+      if (message.event.type === 'error') error = message.event.message;
+      if (message.event.type === 'run_finished') finish({ finished: message.event.outcome, error });
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    sock.on('message', onMessage);
+  });
 }
 
 function connect(port: number): Promise<WebSocket> {
