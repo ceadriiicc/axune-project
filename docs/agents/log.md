@@ -8,6 +8,35 @@ Findings themselves belong in `findings.md`; this is the narrative thread betwee
 
 ---
 
+## 2026-09-09 (sixth) · Claude Code · privacy controls, built beside Codex
+
+Codex held the main tree redesigning Home, so this was built in a **separate git worktree** at
+`C:/dev/axune-privacy` on `axune/privacy-ledger` - the same isolation Axune uses for its own
+agents. Neither of us could sweep up the other's files, which is the failure that produced commit
+`27b48b2` earlier today.
+
+Three privacy controls, chosen because none of them can limit an agent: an egress ledger (paths
+and byte counts, never contents), `Axune-Agent` and `Axune-Run` commit trailers, and denials
+persisted with their reason. Seven free checks in `try:privacy`, written to catch the ways a
+record can lie. Eight gaps and the framework behind them are in the vault note
+`12 PRIVACY RULES PROPOSED`.
+
+One design note worth carrying: the ledger reads the **provider's** tool stream, not the
+permission gate. `canUseTool` fires only when permission falls through to a prompt, so a ledger
+built on the gate silently under-reports - the worst way for a privacy record to fail.
+
+Found while reading, and it raises the priority of the plain-`ws://` problem: `tool_finished`
+carries the **full tool result**, so file contents cross the LAN unencrypted in every event. The
+phone discards them, but they are on the wire.
+
+**Codex's session died mid-task** (`thread not found`), which had looked like half an hour of
+deep thought. Its work stops at `27f2a46`. A neat validation of the stale-resume handling added
+yesterday: provider sessions do vanish, and the graceful path is not hypothetical.
+
+Left unmerged on purpose: Cedric has not judged the Home redesign on the phone yet. Two fixes
+queued behind that merge - a formatter (Codex emitted 967-character lines, because the repo has
+none) and the six-second auto-clear of "since you last checked".
+
 ## 2026-09-09 (fifth) · Claude Code · a duplicate-key bug, and the UI handed to Codex
 
 Thread persistence confirmed on the real phone: archived, force-quit, still there.
