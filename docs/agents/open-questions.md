@@ -18,7 +18,16 @@ enforced a layer lower. What selects between the two, and can it be forced per r
 
 ## Q7 - Does a dedicated CODEX_HOME contain Codex, and does the sandbox still work in it? - owner: Claude, one step needed from Cedric
 
-**Blocked until 8 October 2026.** Codex usage is exhausted (C28), on both the CLI and the
+**ANSWERED 2026-09-09: no.** Neither configuration is both safe and functional - see C30. A
+dedicated `CODEX_HOME` removes computer use but never provisions the sandbox, so nothing can be
+read, and `web_search` is built in and runs regardless. The main home keeps the sandbox but its
+tool surface cannot be stripped by any override (C29). Unexplored levers are listed in C31.
+
+Recommendation recorded with it: **Gemini CLI becomes the second agent**, and Codex returns when
+someone can spend real time on C31. Nothing learned here is wasted - the adapter interface fix,
+the run routing, and all 31 findings stand.
+
+**Previously: blocked until 8 October 2026.** Codex usage is exhausted (C28), on both the CLI and the
 desktop app, so this cannot be tested and no Codex adapter can be verified before then. The
 profile at `C:/dev/axune-codex-home` is prepared and unauthenticated; leave it that way rather
 than spending a login on something untestable.
