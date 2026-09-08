@@ -154,6 +154,24 @@ export class AxuneClient {
     if (!this.url) return;
     this.callbacks.onState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
 
+    // Close whatever was open first. Without this, pairing while an old socket
+    // is still alive - which is exactly what happens when the desktop's LAN
+    // address changes and the phone rescans - leaves two authenticated
+    // connections, and the desktop broadcasts every event down both. The app
+    // then handles each event twice.
+    if (this.socket) {
+      const stale = this.socket;
+      this.socket = null;
+      stale.onclose = null;
+      stale.onmessage = null;
+      stale.onerror = null;
+      try {
+        stale.close();
+      } catch {
+        // Already closing. Nothing to do.
+      }
+    }
+
     const socket = new WebSocket(this.url);
     this.socket = socket;
 

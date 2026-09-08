@@ -175,6 +175,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * every stored conversation on launch.
    */
   const hydrated = useRef(false);
+  /** Activity ids already applied, so an at-least-once stream stays idempotent. */
+  const seenActivityIds = useRef<Set<string>>(new Set());
 
   const applyEvent = useCallback((event: AgentEvent) => {
     setConversation((current) => {
@@ -230,10 +232,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       },
       onAgents: setAgents,
       onActivity: (events, sinceLastVisit) => {
+        // A snapshot is authoritative: it replaces the list, so it also
+        // replaces what counts as already seen.
+        seenActivityIds.current = new Set(events.map((entry) => entry.id));
         setActivity(events);
         setNewSinceLastVisit(sinceLastVisit);
       },
       onActivityEvent: (event) => {
+        // Delivery is not exactly-once. A reconnect can overlap a snapshot, and
+        // two live sockets deliver every broadcast twice - which is how React
+        // ended up rendering a list with two children sharing a key. Treat the
+        // stream as at-least-once and make applying it idempotent, rather than
+        // trying to guarantee delivery upstream.
+        //
+        // The guard covers the counter as well as the list: a duplicate that
+        // bumped "since you last checked" would misreport how much happened
+        // while the user was away.
+        if (seenActivityIds.current.has(event.id)) return;
+        seenActivityIds.current.add(event.id);
         setActivity((past) => [...past.slice(-80), event]);
         setNewSinceLastVisit((count) => count + 1);
       },

@@ -68,20 +68,44 @@ async function main() {
   });
 }
 
+/**
+ * Elapsed milliseconds since each run began, so the terminal can answer "why
+ * did that take so long" without guesswork.
+ *
+ * Added after a prompt from the phone took 37 seconds to show its first word,
+ * while the same prompt measured 8 seconds driving the adapter directly. A
+ * number beside every event is the cheapest way to find the missing time.
+ */
+const runStarts = new Map<string, number>();
+const firstTextSeen = new Set<string>();
+
+function since(runId: string): string {
+  const started = runStarts.get(runId);
+  return started === undefined ? "      " : String(Date.now() - started).padStart(6);
+}
+
 function renderEvent(event: AgentEvent) {
   switch (event.type) {
     case 'run_started':
+      runStarts.set(event.runId, Date.now());
+      firstTextSeen.delete(event.runId);
       return void console.log(`\n[run] ${event.prompt}\n`);
+    case 'working':
+      return void console.log(`  ${since(event.runId)} ms  working`);
     case 'message_delta':
+      if (!firstTextSeen.has(event.runId)) {
+        firstTextSeen.add(event.runId);
+        console.log(`\n  ${since(event.runId)} ms  FIRST TEXT\n`);
+      }
       return void process.stdout.write(event.text);
     case 'tool_started':
-      return void console.log(`\n  → ${event.toolName}`);
+      return void console.log(`\n  ${since(event.runId)} ms  -> ${event.toolName}`);
     case 'tool_finished':
-      return void console.log(`  ← ${event.ok ? 'ok' : 'denied'}`);
+      return void console.log(`  ${since(event.runId)} ms  <- ${event.ok ? 'ok' : 'denied'}`);
     case 'run_finished':
-      return void console.log(`\n[run] ${event.outcome}\n`);
+      return void console.log(`\n  ${since(event.runId)} ms  [run] ${event.outcome}\n`);
     case 'error':
-      return void console.log(`\n[error] ${event.message}\n`);
+      return void console.log(`\n  ${since(event.runId)} ms  [error] ${event.message}\n`);
     default:
       return;
   }
