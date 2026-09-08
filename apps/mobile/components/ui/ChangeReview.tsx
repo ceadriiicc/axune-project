@@ -198,14 +198,14 @@ function splitPatch(patch: string): Map<string, string> {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: 'rgba(110,184,187,0.28)',
     backgroundColor: 'rgba(110,184,187,0.06)',
-    padding: spacing.sm + 2,
+    padding: spacing.md,
     gap: spacing.sm,
   },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   branch: { color: color.codexText, fontSize: 12, fontWeight: '600', flex: 1 },
   summary: { color: color.textMuted, fontSize: 13 },
   stale: { color: color.claude, fontSize: 11.5 },
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   diffMeta: { color: color.textSoft },
   noDiff: { color: color.textSoft, fontSize: 11.5, paddingBottom: 6 },
 
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
   keep: {
     flex: 1,
     flexDirection: 'row',
@@ -240,8 +240,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: color.codex,
-    borderRadius: radius.sm,
-    paddingVertical: 11,
+    borderRadius: radius.md,
+    paddingVertical: 12,
   },
   keepText: { color: '#0f1b1c', fontSize: 13, fontWeight: '700' },
   discard: { paddingHorizontal: spacing.md, paddingVertical: 11 },

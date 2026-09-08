@@ -109,12 +109,12 @@ function relative(at: number): string {
 
 const styles = StyleSheet.create({
   since: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: 'rgba(110,184,187,0.28)',
     backgroundColor: 'rgba(110,184,187,0.08)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     marginTop: spacing.md,
   },
   sinceLabel: {

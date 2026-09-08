@@ -291,12 +291,12 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
 
   onboarding: { flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
-  wordmarkLarge: { fontSize: 30, fontWeight: '800', letterSpacing: -1, color: color.text },
-  onboardingTitle: { color: color.text, fontSize: 18, fontWeight: '600' },
-  onboardingBody: { color: color.textMuted, fontSize: 14, lineHeight: 21 },
+  wordmarkLarge: { fontSize: 36, fontWeight: '800', letterSpacing: -1.5, color: color.text },
+  onboardingTitle: { color: color.text, fontSize: 23, lineHeight: 29, fontWeight: '700', letterSpacing: -0.5 },
+  onboardingBody: { color: color.textMuted, fontSize: 15, lineHeight: 23, maxWidth: 330 },
 
   header: { gap: 4 },
-  wordmark: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: color.text },
+  wordmark: { fontSize: 27, fontWeight: '800', letterSpacing: -1, color: color.text },
   machineRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   dot: { width: 7, height: 7, borderRadius: 4 },
   machineName: { color: color.textMuted, fontSize: 13, fontWeight: '600' },

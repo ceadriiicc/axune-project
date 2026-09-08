@@ -101,11 +101,11 @@ export default function PairScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: color.bg, padding: spacing.lg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
-  heading: { color: color.text, fontSize: 20, fontWeight: '700' },
+  heading: { color: color.text, fontSize: 25, fontWeight: '800', letterSpacing: -0.6 },
   body: {
     color: color.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
   },

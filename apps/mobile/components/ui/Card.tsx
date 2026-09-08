@@ -12,7 +12,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.panel,
     borderColor: color.line,
     borderWidth: 1,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.lg,
   },
 });

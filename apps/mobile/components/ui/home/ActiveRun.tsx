@@ -107,11 +107,11 @@ export function formatDuration(ms: number): string {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: 'rgba(216,173,123,0.32)',
     backgroundColor: 'rgba(216,173,123,0.08)',
-    padding: spacing.md,
+    padding: spacing.lg,
     marginTop: spacing.md,
   },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   agent: { fontSize: 13, fontWeight: '700' },
   flex: { flex: 1 },
   elapsed: { color: color.textMuted, fontSize: 12, fontVariant: ['tabular-nums'] },
-  prompt: { color: color.text, fontSize: 15, lineHeight: 21, marginTop: spacing.sm },
+  prompt: { color: color.text, fontSize: 16, lineHeight: 23, marginTop: spacing.sm },
   doing: { color: color.claudeText, fontSize: 12, marginTop: spacing.sm },
   counts: { color: color.textSoft, fontSize: 12, marginTop: 4 },
   warnText: { color: color.claude },
