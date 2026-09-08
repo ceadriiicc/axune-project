@@ -10,7 +10,7 @@
  * layout problems at the same time, and they look alike from the outside.
  */
 import { execFile } from 'node:child_process';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { AgentEvent } from '@axune/protocol';
@@ -23,7 +23,7 @@ import { AXUNE_PORT } from './core/port';
 const execFileAsync = promisify(execFile);
 
 async function main() {
-  const repo = process.argv[2] ?? process.cwd();
+  const repo = process.argv[2] ?? (await repoRoot(process.cwd()));
   const branch = await currentBranch(repo);
 
   const pairing = new PairingManager(10 * 60 * 1000); // Longer TTL while pairing by hand.
@@ -108,6 +108,31 @@ function renderEvent(event: AgentEvent) {
       return void console.log(`\n  ${since(event.runId)} ms  [error] ${event.message}\n`);
     default:
       return;
+  }
+}
+
+/**
+ * The repository this desktop should point an agent at.
+ *
+ * Not `process.cwd()`: `npm --prefix apps/desktop run serve` sets the working
+ * directory to the package, which silently confined a run to `apps/desktop`.
+ * The agent then spent forty seconds being refused every attempt to read the
+ * real project before it could answer at all - which looked like latency and
+ * was a boundary drawn in the wrong place.
+ *
+ * Falls back to the working directory, since a non-repository is a legitimate
+ * thing to point at and the caller is told either way.
+ */
+async function repoRoot(from: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', from, 'rev-parse', '--show-toplevel'], {
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    const root = stdout.trim();
+    return root ? resolve(root) : from;
+  } catch {
+    return from;
   }
 }
 

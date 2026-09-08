@@ -39,8 +39,13 @@ export function LiveRunPanel({ run, onStop }: { run: LiveRun; onStop: () => void
       {run.activity.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activityRow}>
           {run.activity.slice(-8).map((line) => (
-            <View key={line.id} style={styles.chip}>
-              <Text style={[styles.chipText, line.ok === false && styles.denied]}>{line.label}</Text>
+            <View key={line.id} style={[styles.chip, line.ok === false && styles.chipDenied]}>
+              <Text style={[styles.chipText, line.ok === false && styles.denied]}>
+                {line.label}
+              </Text>
+              {/* What the tool touched. On a refusal this is the whole point:
+                  "denied" on its own tells the user nothing. */}
+              {line.detail ? <Text style={styles.chipDetail}>{line.detail}</Text> : null}
             </View>
           ))}
         </ScrollView>
@@ -100,6 +105,9 @@ const styles = StyleSheet.create({
   answer: { fontSize: 13, lineHeight: 20 },
   activityRow: { flexGrow: 0 },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: color.line,
@@ -108,6 +116,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   chipText: { color: color.textMuted, fontSize: 11 },
+  chipDetail: { color: color.textSoft, fontSize: 11 },
+  chipDenied: { borderColor: color.danger },
   denied: { color: color.danger },
   stop: {
     flexDirection: 'row',

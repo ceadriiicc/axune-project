@@ -61,6 +61,11 @@ export interface ActivityLine {
   ok: boolean | null;
   /** The file or command, so "Read" can say what it read. */
   detail?: string;
+  /**
+   * The provider's id for this tool call, so finishing one updates the row it
+   * started rather than adding another.
+   */
+  callId?: string;
 }
 
 /**
@@ -510,17 +515,37 @@ function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
         ...run,
         activity: [
           ...run.activity,
-          { id: `${event.seq}`, label: event.toolName, ok: null, detail: shortDetail(event.input) },
+          {
+            id: `${event.seq}`,
+            callId: event.toolCallId,
+            label: event.toolName,
+            ok: null,
+            detail: shortDetail(event.input),
+          },
         ],
       };
-    case 'tool_finished':
-      return {
-        ...run,
-        activity: [
-          ...run.activity,
-          { id: `${event.seq}`, label: event.ok ? 'done' : 'denied', ok: event.ok },
-        ],
-      };
+    case 'tool_finished': {
+      // Resolve the row this call started rather than appending another. The
+      // list previously grew two entries per tool - "Read" then "done" - which
+      // is how a handful of file reads became a screen of noise.
+      const index = run.activity.findIndex(
+        (line) => line.callId === event.toolCallId && line.ok === null,
+      );
+      if (index < 0) {
+        // A finish with no start: worth showing rather than dropping, since it
+        // means the desktop refused something before the call was announced.
+        return {
+          ...run,
+          activity: [
+            ...run.activity,
+            { id: `${event.seq}`, label: event.ok ? 'done' : 'denied', ok: event.ok },
+          ],
+        };
+      }
+      const activity = [...run.activity];
+      activity[index] = { ...activity[index]!, ok: event.ok };
+      return { ...run, activity };
+    }
     case 'run_finished':
       return {
         ...run,

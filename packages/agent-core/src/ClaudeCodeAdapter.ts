@@ -167,10 +167,17 @@ ${INJECTION_NOTICE}`,
               const input = redactSecrets(safeStringify(toolInput));
               const mode = request.readOnly ? ('read' as const) : ('write' as const);
 
+              // A denied call never reaches the provider's own message stream,
+              // so the gate has to report both halves of its lifecycle itself.
+              // It previously emitted only the finish, which arrived on the
+              // phone as an unattached "denied" with nothing saying what was
+              // refused.
+              const callId = `denied-${toolName}-${seq}`;
               const deny = (reason: string) => {
+                emit({ type: 'tool_started', toolCallId: callId, toolName, input });
                 emit({
                   type: 'tool_finished',
-                  toolCallId: toolName,
+                  toolCallId: callId,
                   ok: false,
                   output: `Denied: ${reason}`,
                 });
@@ -196,7 +203,11 @@ ${INJECTION_NOTICE}`,
                 );
               }
 
-              emit({ type: 'tool_started', toolCallId: toolName, toolName, input });
+              // Deliberately silent on approval. `translate` already reports a
+              // permitted call, keyed by the provider's own tool id, and
+              // emitting here as well showed every allowed tool twice on the
+              // phone - the "read read glob glob" that made the activity list
+              // unreadable.
               return { behavior: 'allow' as const, updatedInput: toolInput };
             },
           },
