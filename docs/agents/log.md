@@ -8,6 +8,24 @@ Findings themselves belong in `findings.md`; this is the narrative thread betwee
 
 ---
 
+## 2026-09-09 (later) · Claude Code · Q1 settled, and a correction against myself
+
+Chased the read-only blocker to the end. It was never a Windows limitation: `--ignore-user-config`
+stops the sandbox being provisioned with read and write roots, so it fails closed and refuses
+every process. Recorded as C12, with C2 corrected in place rather than deleted.
+
+Found while reading `~/.codex/.sandbox/*.log` — which showed commands succeeding for Codex at
+the very moment they were failing for me. The sandbox turned out to be fully provisioned
+already: two local users, a group, ACLs and firewall rules blocking egress and loopback for the
+offline user (C13). The setup helper Cedric ran by hand was never an installer at all (C14).
+
+Worth recording plainly: **Codex was right and I was wrong.** Its recommendation to use its own
+sandbox as the enforcement boundary is now the plan. I refuted it on evidence that turned out to
+be measuring the wrong thing, while holding all the evidence needed to see that. The status
+labels in `findings.md` are what let this be corrected cleanly instead of quietly.
+
+Left: `CodexAdapter` is unblocked. Q2, Q3, Q4 and the new Q1a are Codex's; Q1b is mine.
+
 ## 2026-09-09 · Claude Code · the shared folder, and run routing
 
 Set up this folder, `AGENTS.md` and `CLAUDE.md`, at Cedric's request after the first

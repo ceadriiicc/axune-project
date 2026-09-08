@@ -9,26 +9,18 @@ needing his machine, his accounts, or a product decision.
 
 ---
 
-## Q1 — Can Codex ever be run read-only on Windows? · owner: Cedric, then Claude
+## Q1a — Which sandbox user does a run execute as, and can we demand the offline one? · owner: Codex
 
-**The one thing blocking `CodexAdapter`.** Today `--sandbox read-only` executes nothing (C2) and
-`--approve-for-me` implies write access (C5), and the two cannot be combined (C3).
+`CodexSandboxOffline` has outbound **and loopback** traffic blocked by firewall rule; the online
+user does not (C15). If Axune can pin a run to the offline user, network egress is denied by the
+OS — the control Axune enforces for Claude Code by switching `WebFetch`/`WebSearch` off, only
+enforced a layer lower. What selects between the two, and can it be forced per run?
 
-Next step is Cedric running the signed setup helper from an **administrator** terminal, since it
-installs sandbox infrastructure and Claude will not run an elevated installer:
+## Q1b — Confirm the tool surface is gone, not merely unused · owner: Claude
 
-    & "C:\Users\cedri\AppData\Local\OpenAI\Codex\bin\8e5b6932251c2c1c\codex-windows-sandbox-setup.exe"
-
-Then Claude retests whether `--sandbox read-only` can execute a command. That single retest
-decides between two designs:
-
-- **It works** → `CodexAdapter` gets a real read-only mode, and Axune gains an OS-level sandbox
-  it currently lacks entirely — the largest gap in its security story.
-- **It does not** → Codex runs isolation-only: every run gets a throwaway worktree, and a
-  read-only prompt is enforced by discarding the branch afterwards rather than by preventing
-  writes. Acceptable under constraint 3, but the write toggle must then be **relabelled for
-  Codex runs**, because as it stands it would promise something Codex cannot deliver. Shipping a
-  switch that lies is not an option.
+C12's run showed no `web_search` and no `mcp_tool_call`, but the prompt did not invite either.
+Re-probe with a question that actively tempts a web search, and confirm the `-c` overrides
+suppress it rather than the model simply not bothering.
 
 ## Q2 — The complete `codex exec --json` event and item schema · owner: Codex
 
@@ -67,6 +59,12 @@ refinement rather than a hole for Claude Code. For Codex it may matter sooner, b
 ---
 
 ## Settled
+
+- ~~**Q1: can Codex run read-only on Windows?**~~ **Yes**, settled 2026-09-09. It always could;
+  the blanket refusal came from `--ignore-user-config`, which strips the sandbox's read/write
+  root provisioning and makes it fail closed. The working invocation is in `findings.md` under
+  "The invocation Axune should use". Writes are refused by the operating system, which is
+  stronger containment than Claude Code has here. `CodexAdapter` is no longer blocked.
 
 - ~~**Codex or Gemini first?**~~ **Codex**, 2026-09-08. Earlier research claiming Codex's
   subscription auth was "Advanced only" was out of date; bare `codex login` is the ChatGPT
