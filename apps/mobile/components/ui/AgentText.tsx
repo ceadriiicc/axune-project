@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View, type TextStyle } from 'react-native';
 
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 
 /**
  * Renders the small slice of Markdown that coding agents actually emit.
@@ -12,6 +13,7 @@ import { color, radius, spacing } from '@/constants/theme';
  * the correct failure mode: the reader sees the words, never the syntax.
  */
 export function AgentText({ text, style }: { text: string; style?: TextStyle }) {
+  const styles = useStyles();
   const blocks = useMemo(() => parseBlocks(text), [text]);
 
   return (
@@ -29,7 +31,7 @@ export function AgentText({ text, style }: { text: string; style?: TextStyle }) 
             <View key={index} style={styles.bulletRow}>
               <Text style={[styles.bulletDot, style]}>•</Text>
               <Text style={[styles.paragraph, style, styles.bulletText]}>
-                {renderInline(block.text)}
+                {renderInline(block.text, styles)}
               </Text>
             </View>
           );
@@ -37,13 +39,13 @@ export function AgentText({ text, style }: { text: string; style?: TextStyle }) 
         if (block.kind === 'heading') {
           return (
             <Text key={index} style={[styles.heading, style]}>
-              {renderInline(block.text)}
+              {renderInline(block.text, styles)}
             </Text>
           );
         }
         return (
           <Text key={index} style={[styles.paragraph, style]}>
-            {renderInline(block.text)}
+            {renderInline(block.text, styles)}
           </Text>
         );
       })}
@@ -116,7 +118,7 @@ function parseBlocks(input: string): Block[] {
 }
 
 /** Handles **bold**, *italic* and `inline code` in a single pass. */
-function renderInline(text: string): React.ReactNode[] {
+function renderInline(text: string, styles: ReturnType<typeof useStyles>): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g;
   let cursor = 0;
@@ -153,26 +155,29 @@ function renderInline(text: string): React.ReactNode[] {
   return nodes;
 }
 
-const styles = StyleSheet.create({
-  stack: { gap: spacing.sm },
-  paragraph: { fontSize: 13, lineHeight: 20, color: color.text },
-  heading: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: color.text },
-  bold: { fontWeight: '700' },
-  italic: { fontStyle: 'italic' },
-  inlineCode: {
-    fontFamily: 'Menlo',
-    fontSize: 12,
-    color: color.claudeText,
-  },
-  bulletRow: { flexDirection: 'row', gap: 8 },
-  bulletDot: { fontSize: 13, lineHeight: 20, color: color.textSoft },
-  bulletText: { flex: 1 },
-  codeBlock: {
-    backgroundColor: 'rgba(0,0,0,0.28)',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: color.line,
-    padding: spacing.sm,
-  },
-  codeText: { fontFamily: 'Menlo', fontSize: 11.5, lineHeight: 17, color: color.textMuted },
-});
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    stack: { gap: spacing.sm },
+    paragraph: { fontSize: 13, lineHeight: 20, color: color.text },
+    heading: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: color.text },
+    bold: { fontWeight: '700' },
+    italic: { fontStyle: 'italic' },
+    inlineCode: {
+      fontFamily: 'Menlo',
+      fontSize: 12,
+      color: color.claudeText,
+    },
+    bulletRow: { flexDirection: 'row', gap: 8 },
+    bulletDot: { fontSize: 13, lineHeight: 20, color: color.textSoft },
+    bulletText: { flex: 1 },
+    codeBlock: {
+      backgroundColor: 'rgba(0,0,0,0.28)',
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: color.line,
+      padding: spacing.sm,
+    },
+    codeText: { fontFamily: 'Menlo', fontSize: 11.5, lineHeight: 17, color: color.textMuted },
+  });
+}

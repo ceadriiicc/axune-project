@@ -3,7 +3,8 @@ import type { ChangeSet } from '@axune/protocol';
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 
 /**
  * Review what an agent wrote, and decide.
@@ -26,6 +27,8 @@ export function ChangeReview({
   decision: 'keep' | 'discard' | null;
   onDecide: (decision: 'keep' | 'discard') => void;
 }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const [openFile, setOpenFile] = useState<string | null>(null);
   const byFile = useMemo(() => splitPatch(changes.patch), [changes.patch]);
 
@@ -76,7 +79,7 @@ export function ChangeReview({
                   size={13}
                   color={color.textSoft}
                 />
-                <Text style={[styles.status, statusStyle(file.status)]}>
+                <Text style={[styles.status, statusStyle(file.status, styles)]}>
                   {file.status === 'created' ? 'A' : file.status === 'deleted' ? 'D' : 'M'}
                 </Text>
                 <Text style={styles.path} numberOfLines={1} ellipsizeMode="head">
@@ -128,6 +131,7 @@ const DIFF_NOISE =
 
 /** A patch rendered so additions and removals are distinguishable at a glance. */
 function Diff({ text }: { text: string }) {
+  const styles = useStyles();
   if (!text.trim()) {
     return <Text style={styles.noDiff}>No diff available for this file.</Text>;
   }
@@ -145,7 +149,7 @@ function Diff({ text }: { text: string }) {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.diffScroll}>
       <View style={styles.diff}>
         {lines.map((line, index) => (
-          <Text key={index} style={[styles.diffLine, lineStyle(line)]}>
+          <Text key={index} style={[styles.diffLine, lineStyle(line, styles)]}>
             {line || ' '}
           </Text>
         ))}
@@ -154,7 +158,7 @@ function Diff({ text }: { text: string }) {
   );
 }
 
-function lineStyle(line: string) {
+function lineStyle(line: string, styles: ReturnType<typeof useStyles>) {
   if (line.startsWith('+++') || line.startsWith('---')) return styles.diffMeta;
   if (line.startsWith('@@')) return styles.diffHunk;
   if (line.startsWith('+')) return styles.diffAdd;
@@ -162,7 +166,7 @@ function lineStyle(line: string) {
   return styles.diffContext;
 }
 
-function statusStyle(status: string) {
+function statusStyle(status: string, styles: ReturnType<typeof useStyles>) {
   if (status === 'created') return styles.statusAdd;
   if (status === 'deleted') return styles.statusDelete;
   return styles.statusModify;
@@ -196,57 +200,60 @@ function splitPatch(patch: string): Map<string, string> {
   return sections;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(110,184,187,0.28)',
-    backgroundColor: 'rgba(110,184,187,0.06)',
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  branch: { color: color.codexText, fontSize: 12, fontWeight: '600', flex: 1 },
-  summary: { color: color.textMuted, fontSize: 13 },
-  stale: { color: color.claude, fontSize: 11.5 },
-  noChanges: { color: color.textMuted, fontSize: 13 },
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    card: {
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: color.codex,
+      backgroundColor: color.codexIconBg,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+    branch: { color: color.codexText, fontSize: 12, fontWeight: '600', flex: 1 },
+    summary: { color: color.textMuted, fontSize: 13 },
+    stale: { color: color.claude, fontSize: 11.5 },
+    noChanges: { color: color.textMuted, fontSize: 13 },
 
-  files: { gap: 2 },
-  fileRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7 },
-  status: { fontSize: 11, fontWeight: '700', width: 12 },
-  statusAdd: { color: color.ok },
-  statusDelete: { color: color.danger },
-  statusModify: { color: color.claude },
-  path: { flex: 1, color: color.text, fontSize: 12.5 },
-  counts: { fontSize: 11 },
-  plus: { color: color.ok, fontWeight: '600' },
-  minus: { color: color.danger, fontWeight: '600' },
+    files: { gap: 2 },
+    fileRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7 },
+    status: { fontSize: 11, fontWeight: '700', width: 12 },
+    statusAdd: { color: color.ok },
+    statusDelete: { color: color.danger },
+    statusModify: { color: color.claude },
+    path: { flex: 1, color: color.text, fontSize: 12.5 },
+    counts: { fontSize: 11 },
+    plus: { color: color.ok, fontWeight: '600' },
+    minus: { color: color.danger, fontWeight: '600' },
 
-  diffScroll: { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: radius.sm, marginBottom: 6 },
-  diff: { padding: spacing.sm },
-  diffLine: { fontFamily: 'Menlo', fontSize: 10.5, lineHeight: 15 },
-  diffAdd: { color: '#9be7b4' },
-  diffRemove: { color: '#e79b9b' },
-  diffContext: { color: color.textSoft },
-  diffHunk: { color: color.codexText },
-  diffMeta: { color: color.textSoft },
-  noDiff: { color: color.textSoft, fontSize: 11.5, paddingBottom: 6 },
+    diffScroll: { backgroundColor: color.panelAlt, borderRadius: radius.sm, marginBottom: 6 },
+    diff: { padding: spacing.sm },
+    diffLine: { fontFamily: 'Menlo', fontSize: 10.5, lineHeight: 15 },
+    diffAdd: { color: color.ok },
+    diffRemove: { color: color.danger },
+    diffContext: { color: color.textSoft },
+    diffHunk: { color: color.codexText },
+    diffMeta: { color: color.textSoft },
+    noDiff: { color: color.textSoft, fontSize: 11.5, paddingBottom: 6 },
 
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
-  keep: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: color.codex,
-    borderRadius: radius.md,
-    paddingVertical: 12,
-  },
-  keepText: { color: '#0f1b1c', fontSize: 13, fontWeight: '700' },
-  discard: { paddingHorizontal: spacing.md, paddingVertical: 11 },
-  discardText: { color: color.textMuted, fontSize: 13, fontWeight: '600' },
+    actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
+    keep: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: color.codex,
+      borderRadius: radius.md,
+      paddingVertical: 12,
+    },
+    keepText: { color: color.bg, fontSize: 13, fontWeight: '700' },
+    discard: { paddingHorizontal: spacing.md, paddingVertical: 11 },
+    discardText: { color: color.textMuted, fontSize: 13, fontWeight: '600' },
 
-  decided: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  decidedText: { color: color.textMuted, fontSize: 12 },
-});
+    decided: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    decidedText: { color: color.textMuted, fontSize: 12 },
+  });
+}

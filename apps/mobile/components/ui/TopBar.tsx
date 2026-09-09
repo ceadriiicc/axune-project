@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, spacing } from '@/constants/theme';
+import { type Palette, radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 
 interface Props {
   eyebrow?: string;
@@ -12,6 +13,8 @@ interface Props {
 }
 
 export function TopBar({ eyebrow, title, onBack, onMore }: Props) {
+  const { palette: color } = useTheme();
+  const styles = makeStyles(color);
   return (
     <View style={styles.row}>
       <Pressable style={styles.iconBtn} onPress={onBack} disabled={!onBack}>
@@ -30,36 +33,37 @@ export function TopBar({ eyebrow, title, onBack, onMore }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.panel,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  eyebrow: {
-    fontSize: 12,
-    color: color.textSoft,
-  },
-  title: {
-    fontSize: 21,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    color: color.text,
-    marginTop: 2,
-  },
-});
+const makeStyles = (color: Palette) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.xl,
+    },
+    iconBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.panel,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    center: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    eyebrow: {
+      fontSize: 12,
+      color: color.textSoft,
+    },
+    title: {
+      fontSize: 21,
+      fontWeight: '800',
+      letterSpacing: -0.4,
+      color: color.text,
+      marginTop: 2,
+    },
+  });

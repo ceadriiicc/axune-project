@@ -8,12 +8,15 @@ import { SinceLastChecked } from '@/components/ui/home/Activity';
 import { Alerts, collectAlerts } from '@/components/ui/home/Alerts';
 import { ago, RepoStatus } from '@/components/ui/home/RepoStatus';
 import { AGENTS } from '@/constants/agents';
-import { color, radius, spacing } from '@/constants/theme';
+import { type Palette, radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
 /** The three-second remote check-in: live work, attention, then change. */
 export default function HomeScreen() {
   const router = useRouter();
+  const { palette: color } = useTheme();
+  const styles = makeStyles(color);
   const {
     connectionState,
     connectionDetail,
@@ -63,7 +66,7 @@ export default function HomeScreen() {
             Pair with Axune Desktop to check real work and drive Claude Code from this phone.
           </Text>
           <Pressable style={styles.primary} onPress={() => router.push('/pair')}>
-            <Ionicons name="qr-code-outline" size={18} color="#1e1b18" />
+            <Ionicons name="qr-code-outline" size={18} color={color.bg} />
             <Text style={styles.primaryText}>Scan QR code</Text>
           </Pressable>
           <Text style={styles.privacyNote}>Your repository and agent stay on your machine.</Text>
@@ -76,7 +79,9 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Pressable style={styles.identity} onPress={() => router.push('/pair')}>
-          <View style={[styles.statusDot, { backgroundColor: connectionColor(connectionState) }]} />
+          <View
+            style={[styles.statusDot, { backgroundColor: connectionColor(connectionState, color) }]}
+          />
           <View style={styles.identityCopy}>
             <Text style={styles.machineName} numberOfLines={1}>
               {machine?.name ?? 'Development machine'}
@@ -127,7 +132,7 @@ export default function HomeScreen() {
               </Text>
             </View>
             <View style={styles.actionArrow}>
-              <Ionicons name="arrow-forward" size={17} color="#1e1b18" />
+              <Ionicons name="arrow-forward" size={17} color={color.bg} />
             </View>
           </Pressable>
         )}
@@ -153,112 +158,118 @@ export default function HomeScreen() {
   );
 }
 
-function connectionColor(state: string): string {
+function connectionColor(state: string, color: Palette): string {
   if (state === 'connected') return color.ok;
   if (state === 'connecting' || state === 'reconnecting') return color.claude;
   if (state === 'failed') return color.danger;
   return color.textSoft;
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: color.bg },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.md },
-  onboarding: { flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
-  mark: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    backgroundColor: color.claude,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  markText: { color: '#1e1b18', fontSize: 23, fontWeight: '800', letterSpacing: -1 },
-  wordmark: { color: color.text, fontSize: 34, fontWeight: '800', letterSpacing: -1.5 },
-  onboardingTitle: {
-    color: color.text,
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '700',
-    letterSpacing: -0.8,
-    maxWidth: 320,
-  },
-  onboardingBody: { color: color.textMuted, fontSize: 15, lineHeight: 23, maxWidth: 335 },
-  primary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    backgroundColor: color.claude,
-    borderRadius: radius.md,
-    paddingVertical: 15,
-    marginTop: spacing.md,
-  },
-  primaryText: { color: '#1e1b18', fontSize: 15, fontWeight: '700' },
-  privacyNote: { color: color.textSoft, fontSize: 12, marginTop: spacing.xs },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xs },
-  statusDot: { width: 9, height: 9, borderRadius: 5 },
-  identityCopy: { flex: 1 },
-  machineName: { color: color.text, fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
-  machineMeta: { color: color.textSoft, fontSize: 12, marginTop: 2 },
-  projectLine: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: color.line,
-  },
-  projectCopy: { flex: 1, paddingRight: spacing.sm },
-  projectName: {
-    color: color.text,
-    fontSize: 27,
-    lineHeight: 32,
-    fontWeight: '800',
-    letterSpacing: -0.9,
-  },
-  branch: { color: color.textMuted, fontSize: 13, marginTop: 3 },
-  permission: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingBottom: 3 },
-  permissionText: { color: color.textSoft, fontSize: 11 },
-  workspaceAction: {
-    minHeight: 104,
-    padding: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: radius.xl,
-    backgroundColor: color.panel,
-    borderWidth: 1,
-    borderColor: 'rgba(216,173,123,0.24)',
-  },
-  actionEyebrow: {
-    color: color.claudeText,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.45,
-    textTransform: 'uppercase',
-  },
-  actionTitle: {
-    color: color.text,
-    fontSize: 19,
-    fontWeight: '700',
-    letterSpacing: -0.35,
-    marginTop: 5,
-  },
-  actionArrow: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: color.claude,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  detail: {
-    color: color.textSoft,
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
-  agentQuiet: { color: color.textSoft, fontSize: 11, textAlign: 'center', marginTop: spacing.lg },
-});
+const makeStyles = (color: Palette) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: color.bg },
+    content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.md },
+    onboarding: { flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
+    mark: {
+      width: 46,
+      height: 46,
+      borderRadius: 16,
+      backgroundColor: color.claude,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.sm,
+    },
+    markText: { color: color.bg, fontSize: 23, fontWeight: '800', letterSpacing: -1 },
+    wordmark: { color: color.text, fontSize: 34, fontWeight: '800', letterSpacing: -1.5 },
+    onboardingTitle: {
+      color: color.text,
+      fontSize: 26,
+      lineHeight: 32,
+      fontWeight: '700',
+      letterSpacing: -0.8,
+      maxWidth: 320,
+    },
+    onboardingBody: { color: color.textMuted, fontSize: 15, lineHeight: 23, maxWidth: 335 },
+    primary: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 9,
+      backgroundColor: color.claude,
+      borderRadius: radius.md,
+      paddingVertical: 15,
+      marginTop: spacing.md,
+    },
+    primaryText: { color: color.bg, fontSize: 15, fontWeight: '700' },
+    privacyNote: { color: color.textSoft, fontSize: 12, marginTop: spacing.xs },
+    identity: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingTop: spacing.xs,
+    },
+    statusDot: { width: 9, height: 9, borderRadius: 5 },
+    identityCopy: { flex: 1 },
+    machineName: { color: color.text, fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
+    machineMeta: { color: color.textSoft, fontSize: 12, marginTop: 2 },
+    projectLine: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      paddingBottom: spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: color.line,
+    },
+    projectCopy: { flex: 1, paddingRight: spacing.sm },
+    projectName: {
+      color: color.text,
+      fontSize: 27,
+      lineHeight: 32,
+      fontWeight: '800',
+      letterSpacing: -0.9,
+    },
+    branch: { color: color.textMuted, fontSize: 13, marginTop: 3 },
+    permission: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingBottom: 3 },
+    permissionText: { color: color.textSoft, fontSize: 11 },
+    workspaceAction: {
+      minHeight: 104,
+      padding: spacing.lg,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: radius.xl,
+      backgroundColor: color.panel,
+      borderWidth: 1,
+      borderColor: color.claude,
+    },
+    actionEyebrow: {
+      color: color.claudeText,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.45,
+      textTransform: 'uppercase',
+    },
+    actionTitle: {
+      color: color.text,
+      fontSize: 19,
+      fontWeight: '700',
+      letterSpacing: -0.35,
+      marginTop: 5,
+    },
+    actionArrow: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: color.claude,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    detail: {
+      color: color.textSoft,
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+      marginTop: spacing.sm,
+    },
+    agentQuiet: { color: color.textSoft, fontSize: 11, textAlign: 'center', marginTop: spacing.lg },
+  });

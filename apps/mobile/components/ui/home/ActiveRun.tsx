@@ -3,7 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AGENTS } from '@/constants/agents';
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import type { LiveRun } from '@/lib/WorkspaceContext';
 
 /**
@@ -26,6 +27,8 @@ export function ActiveRun({
   onOpen: () => void;
   onStop: () => void;
 }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const agent = AGENTS.claude;
   const elapsed = useTicker(run.startedAt);
   const quietFor = run.lastEventAt ? Date.now() - run.lastEventAt : 0;
@@ -105,36 +108,39 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(216,173,123,0.32)',
-    backgroundColor: 'rgba(216,173,123,0.08)',
-    padding: spacing.lg,
-    marginTop: spacing.md,
-  },
-  headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pulse: { width: 8, height: 8, borderRadius: 4 },
-  agent: { fontSize: 13, fontWeight: '700' },
-  flex: { flex: 1 },
-  elapsed: { color: color.textMuted, fontSize: 12, fontVariant: ['tabular-nums'] },
-  prompt: { color: color.text, fontSize: 16, lineHeight: 23, marginTop: spacing.sm },
-  doing: { color: color.claudeText, fontSize: 12, marginTop: spacing.sm },
-  counts: { color: color.textSoft, fontSize: 12, marginTop: 4 },
-  warnText: { color: color.claude },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md },
-  open: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: color.claude,
-    borderRadius: radius.md,
-    paddingVertical: 13,
-  },
-  openText: { color: '#1e1b18', fontSize: 14, fontWeight: '700' },
-  stop: { paddingHorizontal: spacing.md, paddingVertical: 13 },
-  stopText: { color: color.danger, fontSize: 14, fontWeight: '600' },
-});
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    card: {
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: 'rgba(216,173,123,0.32)',
+      backgroundColor: 'rgba(216,173,123,0.08)',
+      padding: spacing.lg,
+      marginTop: spacing.md,
+    },
+    headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    pulse: { width: 8, height: 8, borderRadius: 4 },
+    agent: { fontSize: 13, fontWeight: '700' },
+    flex: { flex: 1 },
+    elapsed: { color: color.textMuted, fontSize: 12, fontVariant: ['tabular-nums'] },
+    prompt: { color: color.text, fontSize: 16, lineHeight: 23, marginTop: spacing.sm },
+    doing: { color: color.claudeText, fontSize: 12, marginTop: spacing.sm },
+    counts: { color: color.textSoft, fontSize: 12, marginTop: 4 },
+    warnText: { color: color.claude },
+    actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md },
+    open: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: color.claude,
+      borderRadius: radius.md,
+      paddingVertical: 13,
+    },
+    openText: { color: '#1e1b18', fontSize: 14, fontWeight: '700' },
+    stop: { paddingHorizontal: spacing.md, paddingVertical: 13 },
+    stopText: { color: color.danger, fontSize: 14, fontWeight: '600' },
+  });
+}
