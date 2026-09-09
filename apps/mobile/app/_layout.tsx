@@ -3,7 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
-import { color } from '@/constants/theme';
+import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
 import { WorkspaceProvider } from '@/lib/WorkspaceContext';
 
 export { ErrorBoundary } from 'expo-router';
@@ -17,9 +17,24 @@ export default function RootLayout() {
     SplashScreen.hideAsync();
   }, []);
 
+  // ThemeProvider wraps everything, so the navigator itself can follow the
+  // active palette. Split into an inner component because the navigator needs
+  // to read the theme, and a provider cannot consume its own context.
   return (
-    <WorkspaceProvider>
-      <StatusBar style="light" />
+    <ThemeProvider>
+      <WorkspaceProvider>
+        <Shell />
+      </WorkspaceProvider>
+    </ThemeProvider>
+  );
+}
+
+function Shell() {
+  const { palette, scheme } = useTheme();
+
+  return (
+    <>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       {/*
        * Theming is set directly on the navigator rather than through
        * react-navigation's ThemeProvider: as of SDK 56 expo-router no longer
@@ -30,11 +45,11 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: color.bg },
+          contentStyle: { backgroundColor: palette.bg },
         }}
       >
         <Stack.Screen name="(tabs)" />
       </Stack>
-    </WorkspaceProvider>
+    </>
   );
 }
