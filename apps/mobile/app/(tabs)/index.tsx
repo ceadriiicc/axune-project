@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActiveRun } from '@/components/ui/home/ActiveRun';
+import { LastRun } from '@/components/ui/home/LastRun';
 import { SinceLastChecked } from '@/components/ui/home/Activity';
 import { Alerts, collectAlerts } from '@/components/ui/home/Alerts';
 import { ago, RepoStatus } from '@/components/ui/home/RepoStatus';
@@ -22,6 +23,7 @@ export default function HomeScreen() {
     capability,
     lastSeenAt,
     live,
+    history,
     activity,
     newSinceLastVisit,
     markChecked,
@@ -31,21 +33,24 @@ export default function HomeScreen() {
   const everPaired = Boolean(machine || project || lastSeenAt);
   const running = live?.status === 'working' ? live : null;
   const git = project?.git;
-  const repositoryNeedsSpace = Boolean(
-    git &&
-    (git.dirtyFiles ||
-      git.untrackedFiles ||
-      git.conflicts ||
-      git.inProgress ||
-      git.detachedHead ||
-      git.ahead ||
-      git.behind),
+  // Deliberately no longer gated on the repository being in trouble. Hiding
+  // it whenever the answer was "nothing is wrong" left Home with nothing to
+  // say about the actual work - and the protocol's own note on this snapshot
+  // is that it is "the reason to open Axune when away from the desk: where did
+  // I get to, is anything uncommitted, is anything unpushed". "Clean, up to
+  // date, last commit 20 minutes ago" is that answer, not the absence of a
+  // card. RepoStatus already compresses itself hard when boring.
+  // Marked as seen when Home loses focus, not on a timer. A six-second
+  // timeout erased the summary of what changed while it was still being read,
+  // which is the one thing on this screen someone came back for.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (newSinceLastVisit > 0) markChecked();
+      },
+      [newSinceLastVisit, markChecked],
+    ),
   );
-  useEffect(() => {
-    if (newSinceLastVisit <= 0) return;
-    const timer = setTimeout(markChecked, 6000);
-    return () => clearTimeout(timer);
-  }, [newSinceLastVisit, markChecked]);
   const alerts = collectAlerts({
     connectionState,
     agents,
@@ -136,7 +141,10 @@ export default function HomeScreen() {
         )}
         <Alerts items={alerts} />
         <SinceLastChecked events={activity} count={newSinceLastVisit} lastCheckedAt={lastSeenAt} />
-        {repositoryNeedsSpace && git ? <RepoStatus git={git} stale={!connected} /> : null}
+        {git ? <RepoStatus git={git} stale={!connected} /> : null}
+        {!running && history[0] ? (
+          <LastRun run={history[0]} onOpen={() => router.push('/workspace')} />
+        ) : null}
         {connectionDetail && !connected ? (
           <Text style={styles.detail}>{connectionDetail}</Text>
         ) : null}
