@@ -16,7 +16,23 @@ user does not (C15). If Axune can pin a run to the offline user, network egress 
 OS — the control Axune enforces for Claude Code by switching `WebFetch`/`WebSearch` off, only
 enforced a layer lower. What selects between the two, and can it be forced per run?
 
-## Q7 - Does a dedicated CODEX_HOME contain Codex, and does the sandbox still work in it? - owner: Claude, one step needed from Cedric
+## Q7 - CLOSED 2026-09-09: Codex cannot be contained, and is not the second agent
+
+**Answered by breach attempt, twice, by both agents.** Built-in `web_search` cannot be switched
+off by any configuration found (C32), so a Codex run always has network egress - the exact path
+Axune closes for Claude Code, because a fetch plus any secret read is a complete exfiltration
+route. Both unknowns had to fall; the first did not, so sandbox provisioning in a dedicated
+`CODEX_HOME` was never investigated and does not matter.
+
+**Decision: Gemini CLI becomes the second agent.** Codex returns only if OpenAI ships a way to
+remove the tool, or if the `--ignore-user-config` coupling (C12, which Codex judged undocumented
+and possibly a defect) is fixed so the tool surface can be stripped without losing the sandbox.
+That coupling is worth reporting to OpenAI with the C12 reproduction.
+
+Nothing learned is wasted: the adapter interface fix, the provider-agnostic run routing, and
+thirty-two findings all stand, and the containment question is mapped rather than open.
+
+## Superseded - Q7 as originally posed: Does a dedicated CODEX_HOME contain Codex, and does the sandbox still work in it? - owner: Claude, one step needed from Cedric
 
 **ANSWERED 2026-09-09: no.** Neither configuration is both safe and functional - see C30. A
 dedicated `CODEX_HOME` removes computer use but never provisions the sandbox, so nothing can be
