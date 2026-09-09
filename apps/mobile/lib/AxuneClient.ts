@@ -36,9 +36,26 @@ export interface ClientCallbacks {
   onBranches?: (branches: AgentBranch[]) => void;
 }
 
+/**
+ * How long to wait for one address before trying the next.
+ *
+ * Short enough that walking two or three candidates is imperceptible, long
+ * enough for a sleeping laptop's Wi-Fi to answer.
+ */
+const CONNECT_TIMEOUT_MS = 3500;
+
 export class AxuneClient {
   private socket: WebSocket | null = null;
+  /**
+   * The address that last worked. Preferred on every later attempt, because a
+   * machine usually stays where it was found.
+   */
   private url: string | null = null;
+  /**
+   * Every address the desktop said it answers on, best first - normally its
+   * `.local` hostname, then its IP. Tried in order until one opens.
+   */
+  private candidates: string[] = [];
   private sessionToken: string | null = null;
   /** Highest seq seen per run, so a resume asks for exactly what it missed. */
   private readonly lastSeq = new Map<string, number>();
@@ -60,8 +77,9 @@ export class AxuneClient {
    * entirely. The one-time code is long spent; the session token is what makes
    * a device trusted.
    */
-  reconnectWithSession(url: string, sessionToken: string): void {
-    this.url = url;
+  reconnectWithSession(urls: string[], sessionToken: string): void {
+    this.candidates = urls;
+    this.url = urls[0] ?? null;
     this.sessionToken = sessionToken;
     this.deliberateClose = false;
     this.open(() => {
@@ -92,7 +110,10 @@ export class AxuneClient {
       return this.callbacks.onState('failed', 'That pairing code has expired. Show a new one.');
     }
 
-    this.url = payload.url;
+    // Prefer the ordered list when the desktop sent one. An older desktop sends
+    // only `url`, so fall back rather than failing to pair at all.
+    this.candidates = payload.urls?.length ? payload.urls : [payload.url];
+    this.url = this.candidates[0] ?? payload.url;
     this.deliberateClose = false;
     this.open(() => {
       this.send({
@@ -143,15 +164,51 @@ export class AxuneClient {
     return this.socket?.readyState === 1;
   }
 
-  /** The durable credential, once paired. Null until then. */
-  get credential(): { url: string; sessionToken: string } | null {
+  /**
+   * The durable credential, once paired. Null until then.
+   *
+   * Carries every known address as well as the one that worked, so a stored
+   * pairing survives the machine moving to a new IP.
+   */
+  get credential(): { url: string; urls: string[]; sessionToken: string } | null {
     return this.url && this.sessionToken
-      ? { url: this.url, sessionToken: this.sessionToken }
+      ? { url: this.url, urls: this.orderedCandidates(), sessionToken: this.sessionToken }
       : null;
   }
 
-  private open(onOpen: () => void): void {
-    if (!this.url) return;
+  /** Last known good address first, then everything else the desktop offered. */
+  private orderedCandidates(): string[] {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const candidate of [this.url, ...this.candidates]) {
+      if (candidate && !seen.has(candidate)) {
+        seen.add(candidate);
+        ordered.push(candidate);
+      }
+    }
+    return ordered;
+  }
+
+  /**
+   * Open a socket, trying each known address until one answers.
+   *
+   * A phone used to store a single IP and treat it as permanent. When the
+   * desktop moved - three times in two days here - reconnection failed
+   * silently and the only way back was scanning a QR code again. Walking a
+   * short candidate list turns that into a two-second delay nobody notices.
+   *
+   * Sequential rather than parallel on purpose: opening several sockets at once
+   * would leave the desktop holding more than one authenticated connection for
+   * the same phone, which is the duplicate-event bug already fixed once.
+   */
+  private open(onOpen: () => void, attempt = 0): void {
+    const candidates = this.orderedCandidates();
+    const target = candidates[attempt];
+    if (!target) {
+      // Every address failed. Reported as failed rather than retried here; the
+      // caller's backoff decides whether to try the whole list again.
+      return this.callbacks.onState('failed', 'Could not reach this machine at any known address.');
+    }
     this.callbacks.onState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
 
     // Close whatever was open first. Without this, pairing while an old socket
@@ -172,10 +229,33 @@ export class AxuneClient {
       }
     }
 
-    const socket = new WebSocket(this.url);
+    const socket = new WebSocket(target);
     this.socket = socket;
 
+    // React Native's WebSocket has no connect timeout, so an unreachable
+    // address hangs instead of failing. Without this the fallback would never
+    // be reached and the phone would simply appear stuck.
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      socket.onopen = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      try {
+        socket.close();
+      } catch {
+        // Already gone.
+      }
+      this.socket = null;
+      this.open(onOpen, attempt + 1);
+    }, CONNECT_TIMEOUT_MS);
+
     socket.onopen = () => {
+      settled = true;
+      clearTimeout(timer);
+      // Remember what worked, so the next launch starts here.
+      this.url = target;
       this.reconnectAttempts = 0;
       onOpen();
     };
@@ -197,6 +277,13 @@ export class AxuneClient {
     socket.onclose = () => {
       this.socket = null;
       if (this.deliberateClose) return;
+      if (!settled) {
+        // Refused before it ever opened: that address is wrong, not the
+        // machine unreachable. Move to the next one immediately.
+        settled = true;
+        clearTimeout(timer);
+        return this.open(onOpen, attempt + 1);
+      }
       this.scheduleReconnect();
     };
   }

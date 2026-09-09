@@ -215,8 +215,25 @@ export interface PairingPayload {
   /** Always "axune" — lets the scanner reject unrelated QR codes immediately. */
   kind: 'axune';
   protocolVersion: number;
-  /** ws://<lan-ip>:<port> */
+  /** ws://<lan-ip>:<port>. Kept as the single address an older phone reads. */
   url: string;
+  /**
+   * Every address this desktop can be reached at, best first.
+   *
+   * A phone stored one IP at pairing and treated it as permanent, but DHCP
+   * disagrees: this machine moved across three addresses in two days, and each
+   * move silently broke reconnection and cost a QR rescan. "Pair once" cannot
+   * survive a router reboot on an IP alone.
+   *
+   * The first entry is normally `ws://<hostname>.local:<port>`, which iOS
+   * resolves through its own mDNS resolver with no extra native module - so the
+   * phone can find the machine by name after it moves. The IP follows as a
+   * fallback for networks where mDNS is blocked.
+   *
+   * Optional so that an older phone paired with a newer desktop, or the
+   * reverse, simply falls back to `url`.
+   */
+  urls?: string[];
   token: string;
   /** Epoch ms after which the desktop will refuse this token. */
   expiresAt: number;

@@ -168,6 +168,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [newSinceLastVisit, setNewSinceLastVisit] = useState(0);
 
   const clientRef = useRef<AxuneClient | null>(null);
+  /** Read inside callbacks created once, which must not close over a stale project. */
+  const projectRef = useRef<ProjectSummary | null>(null);
   /**
    * One conversation id for the whole thread, NOT one per prompt. The desktop
    * keys the agent's resumable session off this, so a fresh id each time would
@@ -208,9 +210,27 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       onState: (state, detail) => {
         setConnectionState(state);
         setConnectionDetail(detail ?? null);
+        // Persist the address that actually worked, on a resume as well as a
+        // first pairing. Without this the stored pairing keeps pointing at
+        // wherever the desktop used to live, and every move costs the fallback
+        // walk again instead of only once.
+        if (state === 'connected') {
+          const credential = clientRef.current?.credential;
+          const name = projectRef.current?.name;
+          if (credential && name) {
+            void savePairing({
+              url: credential.url,
+              urls: credential.urls,
+              sessionToken: credential.sessionToken,
+              projectName: name,
+              pairedAt: Date.now(),
+            });
+          }
+        }
       },
       onEvent: applyEvent,
       onPaired: (proj, agentList) => {
+        projectRef.current = proj;
         setProject(proj);
         setAgents(agentList);
         setLastSeenAt(Date.now());
@@ -220,6 +240,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         if (credential) {
           void savePairing({
             url: credential.url,
+            urls: credential.urls,
             sessionToken: credential.sessionToken,
             projectName: proj.name,
             pairedAt: Date.now(),
@@ -227,6 +248,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         }
       },
       onProject: (proj) => {
+        projectRef.current = proj;
         setProject(proj);
         setLastSeenAt(Date.now());
       },
@@ -434,7 +456,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (cancelled || !stored) return;
       const client = ensureClient();
       client.setLastSeenAt(seenAt);
-      client.reconnectWithSession(stored.url, stored.sessionToken);
+      // Prefer the stored candidate list; a pairing from an earlier version has
+      // only the single address it happened to work on.
+      client.reconnectWithSession(
+        stored.urls?.length ? stored.urls : [stored.url],
+        stored.sessionToken,
+      );
     })();
     return () => {
       cancelled = true;

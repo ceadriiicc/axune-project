@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { networkInterfaces } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 
 import { PROTOCOL_VERSION, type PairingPayload } from '@axune/protocol';
 
@@ -31,6 +31,7 @@ export class PairingManager {
       kind: 'axune',
       protocolVersion: PROTOCOL_VERSION,
       url: `ws://${lanAddress()}:${port}`,
+      urls: reachableUrls(port),
       token,
       expiresAt,
       projectName,
@@ -111,6 +112,34 @@ function constantTimeEquals(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Every address this desktop answers on, best first.
+ *
+ * The hostname comes first deliberately. An IP is what the phone used to store,
+ * and it is the thing that changes - three times in two days here, each time
+ * breaking reconnection silently. `<hostname>.local` is resolved by iOS's own
+ * mDNS resolver, needs no native module, and survives a new lease.
+ *
+ * The IP still follows, because mDNS is blocked on some networks and a name
+ * that cannot be resolved is worse than an address that might be stale.
+ */
+export function reachableUrls(port: number): string[] {
+  const urls = [`ws://${hostname()}.local:${port}`];
+  for (const address of lanAddresses()) urls.push(`ws://${address}:${port}`);
+  return urls;
+}
+
+/** Every non-loopback IPv4 address, so a machine on two networks is reachable on both. */
+export function lanAddresses(): string[] {
+  const found: string[] = [];
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === 'IPv4' && !address.internal) found.push(address.address);
+    }
+  }
+  return found;
 }
 
 /**

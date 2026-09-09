@@ -11,7 +11,16 @@ import * as SecureStore from 'expo-secure-store';
 const KEY = 'axune.pairing.v1';
 
 export interface StoredPairing {
+  /** The address that last worked. */
   url: string;
+  /**
+   * Every address the desktop said it answers on, best first.
+   *
+   * Optional because a pairing stored by an earlier version has only `url`.
+   * Reconnection walks this list, which is what lets a stored pairing survive
+   * the machine changing IP - the thing that previously forced a QR rescan.
+   */
+  urls?: string[];
   sessionToken: string;
   projectName: string;
   pairedAt: number;
