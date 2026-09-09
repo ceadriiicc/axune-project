@@ -105,6 +105,15 @@ export class WorktreeManager {
     const args = ['commit', '-m', subject];
     if (body && body.trim() && body.trim() !== subject) args.push('-m', body.trim());
 
+    // Say who wrote this. Without a trailer an agent's commit is
+    // indistinguishable from one the developer typed, and nobody auditing the
+    // repository a year from now can tell which is which. A trailer is
+    // deliberately additive: authorship stays whatever git is configured to
+    // use, so nothing is misattributed to a person who did not write it, and
+    // the marker is greppable.
+    args.push('-m', `Axune-Agent: ${worktree.agentId}
+Axune-Run: ${worktree.runId}`);
+
     await this.git(args, worktree.path);
     return this.git(['rev-parse', '--short', 'HEAD'], worktree.path);
   }

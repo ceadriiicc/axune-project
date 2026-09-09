@@ -17,6 +17,7 @@ import {
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { ActivityLog } from './ActivityLog';
+import { EgressLedger } from './EgressLedger';
 import { GitWatcher } from './GitWatcher';
 import { readGitSnapshot } from './gitSnapshot';
 import { PairingManager } from './PairingManager';
@@ -53,6 +54,17 @@ export class AxuneServer {
   private readonly connectionListeners = new Set<(state: string) => void>();
 
   private readonly activity = new ActivityLog();
+  /**
+   * What each run sent off this machine. Lazy for the same reason as
+   * `worktrees`: constructor parameter properties are assigned after field
+   * initialisers, so building it eagerly reads an undefined project.
+   */
+  private egressLedger: EgressLedger | null = null;
+
+  private get egress(): EgressLedger {
+    this.egressLedger ??= new EgressLedger(this.project.path);
+    return this.egressLedger;
+  }
   private watcher: GitWatcher | null = null;
   /**
    * Lazy: constructor parameter properties are assigned after field
@@ -343,6 +355,17 @@ export class AxuneServer {
       },
       (event: AgentEvent) => {
         this.registry.record(event);
+        this.egress.observe(message.runId, agentId, event);
+
+        // A refusal is worth keeping. It used to be broadcast to the phone and
+        // then forgotten, so there was no record of what the policy layer
+        // stopped or why - which is precisely what makes the rest of the
+        // logging worth having, and what would have explained a run that spent
+        // forty seconds being denied in near silence.
+        if (event.type === 'tool_finished' && !event.ok) {
+          this.activity.record('policy.denied', truncate(event.output ?? 'Denied', 120));
+        }
+
         this.broadcast({ type: 'event', event });
         for (const listener of this.eventListeners) listener(event);
       },
@@ -360,6 +383,12 @@ export class AxuneServer {
               ? 'run.stopped'
               : 'run.failed';
         this.activity.record(kind, `Run ${handle.outcome}`, truncate(message.prompt));
+
+        // Say what this run sent, in the same place everything else is
+        // recorded. Null when it read nothing: a run that sent nothing should
+        // not leave a note claiming otherwise.
+        const sent = this.egress.close(message.runId);
+        if (sent) this.activity.record('privacy.egress', sent, truncate(message.prompt));
 
         if (worktree) await this.reportChanges(worktree, message.runId, message.prompt);
 

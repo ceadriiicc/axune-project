@@ -12,7 +12,8 @@
     "try:write": "tsx src/tryWrite.ts",
     "build": "node build.mjs",
     "app": "node build.mjs && electron .",
-    "try:restart": "tsx src/tryRestart.ts"
+    "try:restart": "tsx src/tryRestart.ts",
+    "try:privacy": "tsx src/tryPrivacy.ts"
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",
