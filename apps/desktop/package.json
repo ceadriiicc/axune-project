@@ -13,7 +13,8 @@
     "build": "node build.mjs",
     "app": "node build.mjs && electron .",
     "try:restart": "tsx src/tryRestart.ts",
-    "try:privacy": "tsx src/tryPrivacy.ts"
+    "try:privacy": "tsx src/tryPrivacy.ts",
+    "try:gemini": "tsx src/tryGemini.ts"
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",

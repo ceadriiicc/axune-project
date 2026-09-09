@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { hostname, platform } from 'node:os';
 
-import { ClaudeCodeAdapter, type AgentAdapter, type RunningRun } from '@axune/agent-core';
+import {
+  ClaudeCodeAdapter,
+  GeminiAdapter,
+  type AgentAdapter,
+  type RunningRun,
+} from '@axune/agent-core';
 import { WorktreeManager, type Worktree } from '@axune/git-core';
 import {
   PROTOCOL_VERSION,
@@ -45,6 +50,11 @@ export class AxuneServer {
    */
   private readonly adapters = new Map<AgentId, AgentAdapter>([
     ['claude-code', new ClaudeCodeAdapter()],
+    // Registered whether or not the CLI is present. Detection reports it as
+    // missing, which is a better answer than pretending the agent does not
+    // exist - the phone can then say "not installed" rather than "unknown
+    // agent", and the difference matters to someone deciding what to install.
+    ['gemini-cli', new GeminiAdapter()],
   ]);
   private readonly running = new Map<string, RunningRun>();
   /** Sockets that have completed pairing, with their session token. */
@@ -327,6 +337,14 @@ export class AxuneServer {
         agentId,
         `This desktop has no adapter for ${agentId}. Installed: ${[...this.adapters.keys()].join(', ')}.`,
       );
+    }
+
+    // Refuse before spawning. Without this an uninstalled agent produces a raw
+    // ENOENT from a child process, which reaches the phone as an unexplained
+    // failure; the useful answer names the CLI and says it is missing.
+    const detection = await adapter.detect();
+    if (!detection.installed) {
+      return this.failRun(message, agentId, `${agentId} is not installed on this machine. ${detection.detail}`);
     }
 
     // A write run gets its own branch and directory. Failing to create one is
