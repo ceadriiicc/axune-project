@@ -17,7 +17,8 @@ import { AgentText } from '@/components/ui/AgentText';
 import { ChangeReview } from '@/components/ui/ChangeReview';
 import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { AGENTS } from '@/constants/agents';
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace, type LiveRun } from '@/lib/WorkspaceContext';
 
 /**
@@ -39,6 +40,8 @@ const SUGGESTIONS = [
 
 export default function WorkspaceScreen() {
   const router = useRouter();
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const {
     connectionState,
     project,
@@ -96,7 +99,7 @@ export default function WorkspaceScreen() {
               {project?.name ?? 'Workspace'}
             </Text>
             <Text style={styles.subtitle} numberOfLines={1}>
-              {connected ? project?.branch ?? '' : 'Not connected'}
+              {connected ? (project?.branch ?? '') : 'Not connected'}
             </Text>
           </View>
           {/* Labelled, because an unlabelled icon that changes what you are
@@ -235,6 +238,8 @@ function Turn({
   onStop: () => void;
   onDecide: (decision: 'keep' | 'discard') => void;
 }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.turn}>
       <View style={styles.promptRow}>
@@ -261,6 +266,8 @@ function Turn({
 }
 
 function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const agent = AGENTS.claude;
   const working = run.status === 'working';
   const lastTool = [...run.activity].reverse().find((line) => line.ok === null);
@@ -309,167 +316,176 @@ function statusLabel(run: LiveRun): string {
   return 'failed';
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: color.bg },
-  flex: { flex: 1 },
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: color.bg },
+    flex: { flex: 1 },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  title: { color: color.text, fontSize: 21, fontWeight: '800', letterSpacing: -0.45 },
-  subtitle: { color: color.textSoft, fontSize: 12, marginTop: 3 },
-  headerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    height: 32,
-    paddingHorizontal: 10,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: color.line,
-  },
-  headerButtonText: { color: color.textMuted, fontSize: 12, fontWeight: '600' },
-  previous: { marginTop: spacing.lg, gap: 4 },
-  previousLabel: {
-    color: color.textSoft,
-    fontSize: 10.5,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  previousRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: color.line,
-  },
-  previousText: { flex: 1, color: color.textMuted, fontSize: 13 },
-  previousCount: { color: color.textSoft, fontSize: 11 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
+    },
+    title: { color: color.text, fontSize: 21, fontWeight: '800', letterSpacing: -0.45 },
+    subtitle: { color: color.textSoft, fontSize: 12, marginTop: 3 },
+    headerButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      height: 32,
+      paddingHorizontal: 10,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: color.line,
+    },
+    headerButtonText: { color: color.textMuted, fontSize: 12, fontWeight: '600' },
+    previous: { marginTop: spacing.lg, gap: 4 },
+    previousLabel: {
+      color: color.textSoft,
+      fontSize: 10.5,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      marginBottom: 2,
+    },
+    previousRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: 10,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: color.line,
+    },
+    previousText: { flex: 1, color: color.textMuted, fontSize: 13 },
+    previousCount: { color: color.textSoft, fontSize: 11 },
 
-  thread: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.lg },
+    thread: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.lg },
 
-  empty: { paddingTop: spacing.xl * 2, gap: spacing.sm },
-  emptyTitle: { color: color.text, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.6 },
-  emptyBody: { color: color.textMuted, fontSize: 14, lineHeight: 21, maxWidth: 350 },
-  suggestions: { gap: spacing.sm, marginTop: spacing.md },
-  suggestion: {
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.panel,
-    borderRadius: radius.md,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.md,
-  },
-  suggestionText: { color: color.textMuted, fontSize: 14 },
-  pairButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: color.claude,
-    borderRadius: radius.md,
-    paddingVertical: 13,
-    marginTop: spacing.md,
-  },
-  pairText: { color: '#1e1b18', fontSize: 14, fontWeight: '700' },
+    empty: { paddingTop: spacing.xl * 2, gap: spacing.sm },
+    emptyTitle: {
+      color: color.text,
+      fontSize: 24,
+      lineHeight: 30,
+      fontWeight: '700',
+      letterSpacing: -0.6,
+    },
+    emptyBody: { color: color.textMuted, fontSize: 14, lineHeight: 21, maxWidth: 350 },
+    suggestions: { gap: spacing.sm, marginTop: spacing.md },
+    suggestion: {
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.panel,
+      borderRadius: radius.md,
+      paddingVertical: 12,
+      paddingHorizontal: spacing.md,
+    },
+    suggestionText: { color: color.textMuted, fontSize: 14 },
+    pairButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: color.claude,
+      borderRadius: radius.md,
+      paddingVertical: 13,
+      marginTop: spacing.md,
+    },
+    pairText: { color: '#1e1b18', fontSize: 14, fontWeight: '700' },
 
-  turn: { gap: spacing.sm },
-  promptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
-  writeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(216,173,123,0.35)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  writeBadgeText: { color: color.claudeText, fontSize: 10, fontWeight: '600' },
-  modeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginHorizontal: spacing.lg,
-    marginBottom: 6,
-    paddingVertical: 8,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: color.line,
-  },
-  modeRowOff: { opacity: 0.45 },
-  modeRowOn: {
-    borderColor: 'rgba(216,173,123,0.4)',
-    backgroundColor: 'rgba(216,173,123,0.08)',
-  },
-  modeText: { color: color.textSoft, fontSize: 11.5, flex: 1 },
-  modeTextOn: { color: color.claudeText },
-  promptBubble: {
-    alignSelf: 'flex-end',
-    maxWidth: '88%',
-    backgroundColor: '#303842',
-    borderRadius: radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.md,
-  },
-  promptText: { color: color.text, fontSize: 14, lineHeight: 20 },
+    turn: { gap: spacing.sm },
+    promptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+    writeBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: 'rgba(216,173,123,0.35)',
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+    },
+    writeBadgeText: { color: color.claudeText, fontSize: 10, fontWeight: '600' },
+    modeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      marginHorizontal: spacing.lg,
+      marginBottom: 6,
+      paddingVertical: 8,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: color.line,
+    },
+    modeRowOff: { opacity: 0.45 },
+    modeRowOn: {
+      borderColor: 'rgba(216,173,123,0.4)',
+      backgroundColor: 'rgba(216,173,123,0.08)',
+    },
+    modeText: { color: color.textSoft, fontSize: 11.5, flex: 1 },
+    modeTextOn: { color: color.claudeText },
+    promptBubble: {
+      alignSelf: 'flex-end',
+      maxWidth: '88%',
+      backgroundColor: '#303842',
+      borderRadius: radius.md,
+      paddingVertical: 10,
+      paddingHorizontal: spacing.md,
+    },
+    promptText: { color: color.text, fontSize: 14, lineHeight: 20 },
 
-  panels: { flexDirection: 'row', gap: spacing.sm },
-  panel: {
-    flex: 1,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    backgroundColor: color.panel,
-    padding: spacing.sm + 2,
-    gap: spacing.sm,
-  },
-  panelHead: { flexDirection: 'row', alignItems: 'center' },
-  panelAgent: { fontSize: 13, fontWeight: '700' },
-  panelStatus: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
-  doing: { color: color.claudeText, fontSize: 11.5 },
-  thinking: { color: color.textSoft, fontSize: 13, fontStyle: 'italic' },
-  answer: { borderRadius: radius.sm, padding: spacing.sm },
-  stop: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
-  stopText: { color: color.danger, fontSize: 12, fontWeight: '600' },
+    panels: { flexDirection: 'row', gap: spacing.sm },
+    panel: {
+      flex: 1,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      backgroundColor: color.panel,
+      padding: spacing.sm + 2,
+      gap: spacing.sm,
+    },
+    panelHead: { flexDirection: 'row', alignItems: 'center' },
+    panelAgent: { fontSize: 13, fontWeight: '700' },
+    panelStatus: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
+    doing: { color: color.claudeText, fontSize: 11.5 },
+    thinking: { color: color.textSoft, fontSize: 13, fontStyle: 'italic' },
+    answer: { borderRadius: radius.sm, padding: spacing.sm },
+    stop: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+    stopText: { color: color.danger, fontSize: 12, fontWeight: '600' },
 
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.panel,
-  },
-  input: {
-    flex: 1,
-    color: color.text,
-    fontSize: 15,
-    lineHeight: 21,
-    maxHeight: 120,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-  },
-  send: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.sm,
-    backgroundColor: color.codex,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendIdle: { backgroundColor: 'rgba(255,255,255,0.06)' },
-});
+    composer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: spacing.sm,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.panel,
+    },
+    input: {
+      flex: 1,
+      color: color.text,
+      fontSize: 15,
+      lineHeight: 21,
+      maxHeight: 120,
+      paddingVertical: 8,
+      paddingHorizontal: 6,
+    },
+    send: {
+      width: 38,
+      height: 38,
+      borderRadius: radius.sm,
+      backgroundColor: color.codex,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sendIdle: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  });
+}

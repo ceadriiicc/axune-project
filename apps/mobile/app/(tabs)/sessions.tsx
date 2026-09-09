@@ -5,7 +5,8 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 
 import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { ago } from '@/components/ui/home/RepoStatus';
-import { color, radius, spacing } from '@/constants/theme';
+import { type Palette, radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
 /**
@@ -17,6 +18,8 @@ import { useWorkspace } from '@/lib/WorkspaceContext';
  */
 export default function SessionsScreen() {
   const router = useRouter();
+  const { palette: color, mode, setMode } = useTheme();
+  const styles = makeStyles(color);
   const {
     history,
     machine,
@@ -52,7 +55,9 @@ export default function SessionsScreen() {
                 onPress={() => router.push('/workspace')}
               >
                 <View style={styles.rowTop}>
-                  <View style={[styles.dot, { backgroundColor: outcomeColor(run.outcome) }]} />
+                  <View
+                    style={[styles.dot, { backgroundColor: outcomeColor(run.outcome, color) }]}
+                  />
                   <Text style={styles.rowPrompt} numberOfLines={2}>
                     {run.prompt || 'Untitled run'}
                   </Text>
@@ -102,16 +107,41 @@ export default function SessionsScreen() {
           </>
         ) : null}
 
+        <Text style={styles.sectionLabel}>Appearance</Text>
+        <View style={styles.card}>
+          <Text style={styles.appearanceCopy}>
+            Follow this phone, or choose an appearance for Axune.
+          </Text>
+          <View style={styles.themeChoices}>
+            {(['system', 'light', 'dark'] as const).map((choice) => (
+              <Pressable
+                key={choice}
+                onPress={() => setMode(choice)}
+                style={[styles.themeChoice, mode === choice && styles.themeChoiceSelected]}
+              >
+                <Text
+                  style={[
+                    styles.themeChoiceText,
+                    mode === choice && styles.themeChoiceTextSelected,
+                  ]}
+                >
+                  {choice[0].toUpperCase() + choice.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
         <Text style={styles.sectionLabel}>Connection</Text>
         <View style={styles.card}>
           <Detail label="Machine" value={machine?.name ?? 'Not paired'} />
           <Detail label="Project" value={project?.name ?? '—'} />
           <Detail label="Branch" value={project?.branch ?? '—'} />
-          <Detail label="Permission" value={capability === 'read-only' ? 'Read-only' : 'Read + write'} />
           <Detail
-            label="Transport"
-            value={machine ? `${machine.connection} network` : '—'}
+            label="Permission"
+            value={capability === 'read-only' ? 'Read-only' : 'Read + write'}
           />
+          <Detail label="Transport" value={machine ? `${machine.connection} network` : '—'} />
         </View>
 
         <Text style={styles.sectionLabel}>Agents</Text>
@@ -133,7 +163,10 @@ export default function SessionsScreen() {
           )}
         </View>
 
-        <Pressable style={styles.danger} onPress={connected ? disconnect : () => router.push('/pair')}>
+        <Pressable
+          style={styles.danger}
+          onPress={connected ? disconnect : () => router.push('/pair')}
+        >
           <Ionicons
             name={connected ? 'unlink-outline' : 'qr-code-outline'}
             size={16}
@@ -149,6 +182,8 @@ export default function SessionsScreen() {
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
+  const { palette: color } = useTheme();
+  const styles = makeStyles(color);
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -159,87 +194,122 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function outcomeColor(outcome: string): string {
+function outcomeColor(outcome: string, color: Palette): string {
   if (outcome === 'completed') return color.ok;
   if (outcome === 'stopped') return color.textSoft;
   return color.danger;
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: color.bg },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  title: { color: color.text, fontSize: 30, fontWeight: '800', letterSpacing: -1.1, marginTop: spacing.xs },
+const makeStyles = (color: Palette) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: color.bg },
+    content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+    title: {
+      color: color.text,
+      fontSize: 30,
+      fontWeight: '800',
+      letterSpacing: -1.1,
+      marginTop: spacing.xs,
+    },
 
-  empty: {
-    marginTop: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    padding: spacing.lg,
-    backgroundColor: 'rgba(255,255,255,0.025)',
-    gap: 6,
-  },
-  emptyTitle: { color: color.text, fontSize: 15, fontWeight: '600' },
-  emptyBody: { color: color.textMuted, fontSize: 13, lineHeight: 19 },
+    empty: {
+      marginTop: spacing.lg,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.line,
+      padding: spacing.lg,
+      backgroundColor: color.panelAlt,
+      gap: 6,
+    },
+    emptyTitle: { color: color.text, fontSize: 15, fontWeight: '600' },
+    emptyBody: { color: color.textMuted, fontSize: 13, lineHeight: 19 },
 
-  list: { gap: spacing.sm, marginTop: spacing.lg },
-  row: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.surface,
-    padding: spacing.md,
-  },
-  rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  dot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
-  rowPrompt: { flex: 1, color: color.text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
-  rowMeta: { color: color.textSoft, fontSize: 11.5, marginTop: 6 },
-  rowExcerpt: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 },
+    list: { gap: spacing.sm, marginTop: spacing.lg },
+    row: {
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.surface,
+      padding: spacing.md,
+    },
+    rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+    dot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
+    rowPrompt: { flex: 1, color: color.text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+    rowMeta: { color: color.textSoft, fontSize: 11.5, marginTop: 6 },
+    rowExcerpt: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 },
 
-  sectionLabel: {
-    color: color.textSoft,
-    fontSize: 10.5,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  card: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: 10,
-  },
-  detailLabel: { color: color.textSoft, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.45 },
-  detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1, textAlign: 'right' },
-  muted: { color: color.textSoft, fontSize: 13, paddingVertical: 10 },
-  branchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 10 },
-  branchCopy: { flex: 1 },
-  branchName: { color: color.codexText, fontSize: 13, fontWeight: '600' },
-  branchMeta: { color: color.textSoft, fontSize: 11, marginTop: 2 },
-  branchDelete: { padding: 4 },
-  branchHint: { color: color.textSoft, fontSize: 11, marginTop: 6, lineHeight: 16 },
+    sectionLabel: {
+      color: color.textSoft,
+      fontSize: 10.5,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      marginTop: spacing.xl,
+      marginBottom: spacing.sm,
+    },
+    card: {
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.surface,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 4,
+    },
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingVertical: 10,
+    },
+    detailLabel: {
+      color: color.textSoft,
+      fontSize: 12,
+      textTransform: 'uppercase',
+      letterSpacing: 0.45,
+    },
+    detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1, textAlign: 'right' },
+    muted: { color: color.textSoft, fontSize: 13, paddingVertical: 10 },
+    appearanceCopy: {
+      color: color.textMuted,
+      fontSize: 13,
+      lineHeight: 19,
+      paddingTop: spacing.sm,
+    },
+    themeChoices: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    themeChoice: {
+      flex: 1,
+      alignItems: 'center',
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: color.line,
+      paddingVertical: 9,
+    },
+    themeChoiceSelected: { backgroundColor: color.claudeIconBg, borderColor: color.claude },
+    themeChoiceText: { color: color.textMuted, fontSize: 12, fontWeight: '600' },
+    themeChoiceTextSelected: { color: color.claudeIconText },
+    branchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 10 },
+    branchCopy: { flex: 1 },
+    branchName: { color: color.codexText, fontSize: 13, fontWeight: '600' },
+    branchMeta: { color: color.textSoft, fontSize: 11, marginTop: 2 },
+    branchDelete: { padding: 4 },
+    branchHint: { color: color.textSoft, fontSize: 11, marginTop: 6, lineHeight: 16 },
 
-  danger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: spacing.xl,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    paddingVertical: 13,
-  },
-  dangerText: { color: color.danger, fontSize: 14, fontWeight: '600' },
-});
+    danger: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: spacing.xl,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.line,
+      paddingVertical: 13,
+    },
+    dangerText: { color: color.danger, fontSize: 14, fontWeight: '600' },
+  });

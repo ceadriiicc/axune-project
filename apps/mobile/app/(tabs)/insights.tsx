@@ -3,7 +3,8 @@ import React from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AGENTS } from '@/constants/agents';
-import { color, radius, spacing } from '@/constants/theme';
+import { type Palette, radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
 /**
@@ -15,6 +16,8 @@ import { useWorkspace } from '@/lib/WorkspaceContext';
  * the first.
  */
 export default function InsightsScreen() {
+  const { palette: color } = useTheme();
+  const styles = makeStyles(color);
   const { agents, history } = useWorkspace();
   const connectedAgents = agents.filter((agent) => agent.installed);
   const enough = connectedAgents.length >= 2;
@@ -48,7 +51,8 @@ export default function InsightsScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Nothing to compare yet</Text>
             <Text style={styles.cardBody}>
-              Send one prompt to both agents from Workspace, and their answers will be compared here.
+              Send one prompt to both agents from Workspace, and their answers will be compared
+              here.
             </Text>
           </View>
         )}
@@ -64,6 +68,8 @@ export default function InsightsScreen() {
 }
 
 function AgentRow({ name, ready, note }: { name: string; ready: boolean; note?: string }) {
+  const { palette: color } = useTheme();
+  const styles = makeStyles(color);
   return (
     <View style={styles.agentRow}>
       <View style={[styles.dot, { backgroundColor: ready ? color.ok : color.textSoft }]} />
@@ -73,26 +79,33 @@ function AgentRow({ name, ready, note }: { name: string; ready: boolean; note?: 
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: color.bg },
-  content: { padding: spacing.lg },
-  title: { color: color.text, fontSize: 30, fontWeight: '800', letterSpacing: -1.1, marginTop: spacing.xs },
-  subtitle: { color: color.textMuted, fontSize: 14, lineHeight: 21, marginTop: 6, maxWidth: 330 },
-  card: {
-    marginTop: spacing.lg,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.panel,
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
-  cardTitle: { color: color.text, fontSize: 19, fontWeight: '700', letterSpacing: -0.25 },
-  cardBody: { color: color.textMuted, fontSize: 14, lineHeight: 21 },
-  agentList: { marginTop: spacing.sm, gap: spacing.sm },
-  agentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  agentName: { color: color.textMuted, fontSize: 13, flex: 1 },
-  agentNote: { color: color.textSoft, fontSize: 12 },
-  footnote: { color: color.textSoft, fontSize: 12, marginTop: spacing.lg },
-});
+const makeStyles = (color: Palette) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: color.bg },
+    content: { padding: spacing.lg },
+    title: {
+      color: color.text,
+      fontSize: 30,
+      fontWeight: '800',
+      letterSpacing: -1.1,
+      marginTop: spacing.xs,
+    },
+    subtitle: { color: color.textMuted, fontSize: 14, lineHeight: 21, marginTop: 6, maxWidth: 330 },
+    card: {
+      marginTop: spacing.lg,
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.panel,
+      padding: spacing.xl,
+      gap: spacing.md,
+    },
+    cardTitle: { color: color.text, fontSize: 19, fontWeight: '700', letterSpacing: -0.25 },
+    cardBody: { color: color.textMuted, fontSize: 14, lineHeight: 21 },
+    agentList: { marginTop: spacing.sm, gap: spacing.sm },
+    agentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    dot: { width: 7, height: 7, borderRadius: 4 },
+    agentName: { color: color.textMuted, fontSize: 13, flex: 1 },
+    agentNote: { color: color.textSoft, fontSize: 12 },
+    footnote: { color: color.textSoft, fontSize: 12, marginTop: spacing.lg },
+  });

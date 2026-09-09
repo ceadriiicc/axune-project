@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "try:threads": "tsx scripts/tryThreads.ts"
+    "try:threads": "tsx scripts/tryThreads.ts",
+    "try:pairing": "tsx scripts/tryPairing.ts"
   },
   "dependencies": {
     "@axune/protocol": "file:../../packages/protocol",
@@ -37,9 +38,11 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~19.2.2",
+    "@types/ws": "^8.18.1",
     "prettier": "^3.9.6",
     "tsx": "^4.23.13",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "ws": "^8.21.3"
   },
   "private": true
 }

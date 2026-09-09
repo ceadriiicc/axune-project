@@ -2,7 +2,8 @@ import type { GitSnapshot } from '@axune/protocol';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 
 /**
  * Git state, compressed hard when it is boring.
@@ -13,6 +14,8 @@ import { color, radius, spacing } from '@/constants/theme';
  * "+0 −0" is noise.
  */
 export function RepoStatus({ git, stale }: { git: GitSnapshot; stale: boolean }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const clean = git.dirtyFiles === 0 && git.untrackedFiles === 0 && git.conflicts === 0;
   const hasDiff = git.insertions > 0 || git.deletions > 0;
 
@@ -67,40 +70,43 @@ export function ago(at: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    marginTop: spacing.md,
-  },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  label: {
-    color: color.textSoft,
-    fontSize: 10.5,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  stale: { color: color.textSoft, fontSize: 10.5, fontStyle: 'italic' },
-  stateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  clean: { color: color.textMuted, fontSize: 14, fontWeight: '600' },
-  dirty: { color: color.claude, fontSize: 14, fontWeight: '600' },
-  remote: { fontSize: 13, fontVariant: ['tabular-nums'] },
-  ahead: { color: color.codex, fontWeight: '600' },
-  behind: { color: color.danger, fontWeight: '600' },
-  quiet: { color: color.textSoft },
-  diff: { marginTop: 4, fontSize: 12 },
-  plus: { color: color.ok, fontWeight: '600' },
-  minus: { color: color.danger, fontWeight: '600' },
-  commit: { color: color.textMuted, fontSize: 13, marginTop: spacing.sm },
-  commitMeta: { color: color.textSoft, fontSize: 11, marginTop: 2 },
-});
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    card: {
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.surface,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      marginTop: spacing.md,
+    },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    label: {
+      color: color.textSoft,
+      fontSize: 10.5,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    stale: { color: color.textSoft, fontSize: 10.5, fontStyle: 'italic' },
+    stateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 6,
+    },
+    clean: { color: color.textMuted, fontSize: 14, fontWeight: '600' },
+    dirty: { color: color.claude, fontSize: 14, fontWeight: '600' },
+    remote: { fontSize: 13, fontVariant: ['tabular-nums'] },
+    ahead: { color: color.codex, fontWeight: '600' },
+    behind: { color: color.danger, fontWeight: '600' },
+    quiet: { color: color.textSoft },
+    diff: { marginTop: 4, fontSize: 12 },
+    plus: { color: color.ok, fontWeight: '600' },
+    minus: { color: color.danger, fontWeight: '600' },
+    commit: { color: color.textMuted, fontSize: 13, marginTop: spacing.sm },
+    commitMeta: { color: color.textSoft, fontSize: 11, marginTop: 2 },
+  });
+}

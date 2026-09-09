@@ -3,7 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 
 /**
  * Two views of one stream.
@@ -32,6 +33,8 @@ export function SinceLastChecked({
    */
   onDismiss: () => void;
 }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   if (count <= 0) return null;
 
   const fresh = events.slice(-count);
@@ -81,6 +84,8 @@ export function SinceLastChecked({
 }
 
 export function RecentActivity({ events }: { events: ActivityEvent[] }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const rows = [...events].reverse().slice(0, 6);
   if (rows.length === 0) return null;
 
@@ -91,7 +96,7 @@ export function RecentActivity({ events }: { events: ActivityEvent[] }) {
         {rows.map((event) => (
           <View key={event.id} style={styles.row}>
             <Text style={styles.time}>{clock(event.at)}</Text>
-            <View style={[styles.tick, { backgroundColor: kindColor(event.kind) }]} />
+            <View style={[styles.tick, { backgroundColor: kindColor(event.kind, color) }]} />
             <View style={styles.copy}>
               <Text style={styles.summary} numberOfLines={1}>
                 {event.summary}
@@ -109,7 +114,7 @@ export function RecentActivity({ events }: { events: ActivityEvent[] }) {
   );
 }
 
-function kindColor(kind: ActivityKind): string {
+function kindColor(kind: ActivityKind, color: ReturnType<typeof useTheme>['palette']): string {
   if (kind === 'run.failed') return color.danger;
   if (kind === 'run.completed') return color.ok;
   if (kind === 'git.commit' || kind === 'git.pushed') return color.codex;
@@ -131,47 +136,50 @@ function relative(at: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-const styles = StyleSheet.create({
-  since: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(110,184,187,0.28)',
-    backgroundColor: 'rgba(110,184,187,0.08)',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginTop: spacing.md,
-  },
-  sinceHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  dismiss: { marginTop: -2, marginRight: -4, padding: 2 },
-  sinceLabel: {
-    color: color.codexText,
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  sinceLine: { color: color.text, fontSize: 14, marginTop: 5, lineHeight: 19 },
-  sinceFoot: { color: color.textSoft, fontSize: 11, marginTop: 7 },
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    since: {
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: 'rgba(110,184,187,0.28)',
+      backgroundColor: 'rgba(110,184,187,0.08)',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      marginTop: spacing.md,
+    },
+    sinceHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    dismiss: { marginTop: -2, marginRight: -4, padding: 2 },
+    sinceLabel: {
+      color: color.codexText,
+      fontSize: 10.5,
+      fontWeight: '700',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    sinceLine: { color: color.text, fontSize: 14, marginTop: 5, lineHeight: 19 },
+    sinceFoot: { color: color.textSoft, fontSize: 11, marginTop: 7 },
 
-  sectionLabel: {
-    color: color.textSoft,
-    fontSize: 10.5,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  feed: { gap: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 6 },
-  time: {
-    color: color.textSoft,
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
-    width: 38,
-  },
-  tick: { width: 6, height: 6, borderRadius: 3 },
-  copy: { flex: 1 },
-  summary: { color: color.textMuted, fontSize: 13 },
-  detail: { color: color.textSoft, fontSize: 11, marginTop: 1 },
-});
+    sectionLabel: {
+      color: color.textSoft,
+      fontSize: 10.5,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      marginTop: spacing.xl,
+      marginBottom: spacing.sm,
+    },
+    feed: { gap: 2 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 6 },
+    time: {
+      color: color.textSoft,
+      fontSize: 11,
+      fontVariant: ['tabular-nums'],
+      width: 38,
+    },
+    tick: { width: 6, height: 6, borderRadius: 3 },
+    copy: { flex: 1 },
+    summary: { color: color.textMuted, fontSize: 13 },
+    detail: { color: color.textSoft, fontSize: 11, marginTop: 1 },
+  });
+}

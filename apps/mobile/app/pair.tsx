@@ -4,7 +4,8 @@ import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import { TopBar } from '@/components/ui/TopBar';
-import { color, radius, spacing } from '@/constants/theme';
+import { type Palette, radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
 /**
@@ -15,6 +16,8 @@ import { useWorkspace } from '@/lib/WorkspaceContext';
  */
 export default function PairScreen() {
   const router = useRouter();
+  const { palette: color } = useTheme();
+  const styles = makeStyles(color);
   const { pair, connectionState, connectionDetail } = useWorkspace();
   const [permission, requestPermission] = useCameraPermissions();
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +36,11 @@ export default function PairScreen() {
         return;
       }
 
-      if (!payload || typeof payload !== 'object' || (payload as { kind?: string }).kind !== 'axune') {
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        (payload as { kind?: string }).kind !== 'axune'
+      ) {
         setError('That QR code is not an Axune pairing code.');
         return;
       }
@@ -61,7 +68,8 @@ export default function PairScreen() {
         <View style={styles.center}>
           <Text style={styles.heading}>Camera access needed</Text>
           <Text style={styles.body}>
-            Axune reads the pairing code shown by Axune Desktop. The camera is used for nothing else.
+            Axune reads the pairing code shown by Axune Desktop. The camera is used for nothing
+            else.
           </Text>
           <Pressable style={styles.button} onPress={requestPermission}>
             <Text style={styles.buttonText}>Allow camera</Text>
@@ -86,8 +94,8 @@ export default function PairScreen() {
       </View>
 
       <Text style={styles.hint}>
-        Run <Text style={styles.mono}>npm run desktop</Text> on your computer and point the camera at
-        the code it shows.
+        Run <Text style={styles.mono}>npm run desktop</Text> on your computer and point the camera
+        at the code it shows.
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -98,50 +106,51 @@ export default function PairScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: color.bg, padding: spacing.lg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
-  heading: { color: color.text, fontSize: 25, fontWeight: '800', letterSpacing: -0.6 },
-  body: {
-    color: color.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  button: {
-    marginTop: spacing.sm,
-    backgroundColor: color.claude,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.xl,
-  },
-  buttonText: { color: '#1e1b18', fontWeight: '700', fontSize: 15 },
-  viewfinder: {
-    aspectRatio: 1,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-    borderWidth: 1,
-    borderColor: color.line,
-  },
-  reticle: {
-    position: 'absolute',
-    top: '15%',
-    left: '15%',
-    right: '15%',
-    bottom: '15%',
-    borderWidth: 2,
-    borderColor: color.codex,
-    borderRadius: radius.md,
-  },
-  hint: {
-    marginTop: spacing.lg,
-    color: color.textMuted,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-  },
-  mono: { color: color.claudeText },
-  error: { marginTop: spacing.md, color: color.danger, fontSize: 13, textAlign: 'center' },
-});
+const makeStyles = (color: Palette) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: color.bg, padding: spacing.lg },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+    heading: { color: color.text, fontSize: 25, fontWeight: '800', letterSpacing: -0.6 },
+    body: {
+      color: color.textMuted,
+      fontSize: 15,
+      lineHeight: 22,
+      textAlign: 'center',
+      paddingHorizontal: spacing.lg,
+    },
+    button: {
+      marginTop: spacing.sm,
+      backgroundColor: color.claude,
+      borderRadius: radius.md,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.xl,
+    },
+    buttonText: { color: color.bg, fontWeight: '700', fontSize: 15 },
+    viewfinder: {
+      aspectRatio: 1,
+      borderRadius: radius.lg,
+      overflow: 'hidden',
+      backgroundColor: color.panelAlt,
+      borderWidth: 1,
+      borderColor: color.line,
+    },
+    reticle: {
+      position: 'absolute',
+      top: '15%',
+      left: '15%',
+      right: '15%',
+      bottom: '15%',
+      borderWidth: 2,
+      borderColor: color.codex,
+      borderRadius: radius.md,
+    },
+    hint: {
+      marginTop: spacing.lg,
+      color: color.textMuted,
+      fontSize: 13,
+      lineHeight: 19,
+      textAlign: 'center',
+    },
+    mono: { color: color.claudeText },
+    error: { marginTop: spacing.md, color: color.danger, fontSize: 13, textAlign: 'center' },
+  });

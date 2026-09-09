@@ -3,7 +3,8 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ago } from '@/components/ui/home/RepoStatus';
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import type { RunSummary } from '@/lib/WorkspaceContext';
 
 /**
@@ -18,6 +19,8 @@ import type { RunSummary } from '@/lib/WorkspaceContext';
  * actually finished, so there is never a placeholder pretending to be history.
  */
 export function LastRun({ run, onOpen }: { run: RunSummary; onOpen: () => void }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   const failed = run.outcome === 'failed';
   const stopped = run.outcome === 'stopped';
 
@@ -64,34 +67,37 @@ function durationOf(run: RunSummary): string | null {
   return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    marginTop: spacing.md,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  label: {
-    color: color.textSoft,
-    fontSize: 10.5,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  outcome: { color: color.textSoft, fontSize: 10.5 },
-  failed: { color: color.danger },
-  stopped: { color: color.claude },
-  prompt: { color: color.text, fontSize: 15, lineHeight: 21, marginTop: 6 },
-  excerpt: { color: color.textMuted, fontSize: 13, lineHeight: 19, marginTop: 4 },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-  },
-  meta: { color: color.textSoft, fontSize: 11 },
-});
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    card: {
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.surface,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      marginTop: spacing.md,
+    },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    label: {
+      color: color.textSoft,
+      fontSize: 10.5,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    outcome: { color: color.textSoft, fontSize: 10.5 },
+    failed: { color: color.danger },
+    stopped: { color: color.claude },
+    prompt: { color: color.text, fontSize: 15, lineHeight: 21, marginTop: 6 },
+    excerpt: { color: color.textMuted, fontSize: 13, lineHeight: 19, marginTop: 4 },
+    footer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: spacing.sm,
+    },
+    meta: { color: color.textSoft, fontSize: 11 },
+  });
+}

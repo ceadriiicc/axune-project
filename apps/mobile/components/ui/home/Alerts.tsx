@@ -3,7 +3,8 @@ import type { AgentStatus, GitSnapshot } from '@axune/protocol';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 import type { ConnectionState } from '@/lib/AxuneClient';
 
 /**
@@ -45,7 +46,11 @@ export function collectAlerts(input: {
   }
 
   if (git?.detachedHead) {
-    alerts.push({ id: 'detached', severity: 'warn', text: 'HEAD is detached — commits may be lost' });
+    alerts.push({
+      id: 'detached',
+      severity: 'warn',
+      text: 'HEAD is detached — commits may be lost',
+    });
   }
 
   // Being a commit or two behind is ordinary and shown quietly in the repository
@@ -61,7 +66,11 @@ export function collectAlerts(input: {
 
   for (const agent of input.agents) {
     if (!agent.installed) {
-      alerts.push({ id: `agent-${agent.agentId}`, severity: 'warn', text: `${agent.agentId} is not installed` });
+      alerts.push({
+        id: `agent-${agent.agentId}`,
+        severity: 'warn',
+        text: `${agent.agentId} is not installed`,
+      });
     } else if (agent.authenticated === 'no') {
       alerts.push({
         id: `auth-${agent.agentId}`,
@@ -89,6 +98,8 @@ export function collectAlerts(input: {
 }
 
 export function Alerts({ items }: { items: AlertItem[] }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
   if (items.length === 0) return null;
 
   return (
@@ -110,18 +121,21 @@ export function Alerts({ items }: { items: AlertItem[] }) {
   );
 }
 
-const styles = StyleSheet.create({
-  stack: { gap: 6, marginTop: spacing.md },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.md,
-  },
-  warn: { borderColor: 'rgba(216,173,123,0.28)', backgroundColor: 'rgba(216,173,123,0.08)' },
-  danger: { borderColor: 'rgba(204,124,124,0.32)', backgroundColor: 'rgba(204,124,124,0.10)' },
-  text: { color: color.text, fontSize: 13, flex: 1, lineHeight: 18 },
-});
+function useStyles() {
+  const { palette: color } = useTheme();
+  return StyleSheet.create({
+    stack: { gap: 6, marginTop: spacing.md },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      paddingVertical: 10,
+      paddingHorizontal: spacing.md,
+    },
+    warn: { borderColor: color.claude, backgroundColor: color.claudeIconBg },
+    danger: { borderColor: color.danger, backgroundColor: color.panelAlt },
+    text: { color: color.text, fontSize: 13, flex: 1, lineHeight: 18 },
+  });
+}
