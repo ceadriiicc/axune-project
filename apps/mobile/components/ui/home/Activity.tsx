@@ -1,6 +1,7 @@
 import type { ActivityEvent, ActivityKind } from '@axune/protocol';
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { color, radius, spacing } from '@/constants/theme';
 
@@ -16,16 +17,28 @@ export function SinceLastChecked({
   events,
   count,
   lastCheckedAt,
+  onDismiss,
 }: {
   events: ActivityEvent[];
   count: number;
   lastCheckedAt: number | null;
+  /**
+   * Clears the summary. Deliberately the only thing that does.
+   *
+   * This card is the answer to the question a remote monitor exists for, so it
+   * stays until the person says they have read it. An earlier version cleared
+   * itself six seconds after the screen appeared, which erased it mid-read.
+   * Nothing here expires on a timer or on navigation.
+   */
+  onDismiss: () => void;
 }) {
   if (count <= 0) return null;
 
   const fresh = events.slice(-count);
   const commits = fresh.filter((e) => e.kind === 'git.commit').length;
-  const runsDone = fresh.filter((e) => e.kind.startsWith('run.') && e.kind !== 'run.started').length;
+  const runsDone = fresh.filter(
+    (e) => e.kind.startsWith('run.') && e.kind !== 'run.started',
+  ).length;
   const failed = fresh.filter((e) => e.kind === 'run.failed').length;
   const branches = fresh.filter((e) => e.kind === 'git.branch');
   const dirty = fresh.filter((e) => e.kind === 'git.dirty' || e.kind === 'git.clean').slice(-1)[0];
@@ -43,7 +56,18 @@ export function SinceLastChecked({
 
   return (
     <View style={styles.since}>
-      <Text style={styles.sinceLabel}>Since you last checked</Text>
+      <View style={styles.sinceHead}>
+        <Text style={styles.sinceLabel}>Since you last checked</Text>
+        <Pressable
+          onPress={onDismiss}
+          style={styles.dismiss}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Mark as read"
+        >
+          <Ionicons name="close" size={15} color={color.textSoft} />
+        </Pressable>
+      </View>
       {lines.map((line) => (
         <Text key={line} style={styles.sinceLine}>
           {line}
@@ -117,6 +141,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     marginTop: spacing.md,
   },
+  sinceHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  dismiss: { marginTop: -2, marginRight: -4, padding: 2 },
   sinceLabel: {
     color: color.codexText,
     fontSize: 10.5,

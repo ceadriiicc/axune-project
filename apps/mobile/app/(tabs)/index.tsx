@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback } from 'react';
+import { useRouter } from 'expo-router';
+import React from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActiveRun } from '@/components/ui/home/ActiveRun';
 import { LastRun } from '@/components/ui/home/LastRun';
@@ -40,17 +40,9 @@ export default function HomeScreen() {
   // I get to, is anything uncommitted, is anything unpushed". "Clean, up to
   // date, last commit 20 minutes ago" is that answer, not the absence of a
   // card. RepoStatus already compresses itself hard when boring.
-  // Marked as seen when Home loses focus, not on a timer. A six-second
-  // timeout erased the summary of what changed while it was still being read,
-  // which is the one thing on this screen someone came back for.
-  useFocusEffect(
-    useCallback(
-      () => () => {
-        if (newSinceLastVisit > 0) markChecked();
-      },
-      [newSinceLastVisit, markChecked],
-    ),
-  );
+  // Nothing clears this summary automatically - not a timer, and not leaving
+  // the screen. It is dismissed by the close button on the card itself, so it
+  // survives until the person says they have read it.
   const alerts = collectAlerts({
     connectionState,
     agents,
@@ -140,7 +132,12 @@ export default function HomeScreen() {
           </Pressable>
         )}
         <Alerts items={alerts} />
-        <SinceLastChecked events={activity} count={newSinceLastVisit} lastCheckedAt={lastSeenAt} />
+        <SinceLastChecked
+          events={activity}
+          count={newSinceLastVisit}
+          lastCheckedAt={lastSeenAt}
+          onDismiss={markChecked}
+        />
         {git ? <RepoStatus git={git} stale={!connected} /> : null}
         {!running && history[0] ? (
           <LastRun run={history[0]} onOpen={() => router.push('/workspace')} />
