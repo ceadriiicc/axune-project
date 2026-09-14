@@ -12,6 +12,14 @@ import type {
   ServerMessage,
 } from '@axune/protocol';
 import { PROTOCOL_VERSION } from '@axune/protocol';
+import { getRandomBytes } from 'expo-crypto';
+import {
+  fromBase64Url,
+  generateIdentity,
+  SecureChannel,
+  toBase64Url,
+  type Identity,
+} from '@axune/secure-channel';
 
 /**
  * The phone's connection to Axune Desktop.
@@ -57,6 +65,11 @@ export class AxuneClient {
    */
   private candidates: string[] = [];
   private sessionToken: string | null = null;
+  private identity: Identity | null = null;
+  private desktopPublicKey: string | null = null;
+  private pairingToken: string | null = null;
+  private channel: SecureChannel | null = null;
+  private clientNonce: string | null = null;
   /** Highest seq seen per run, so a resume asks for exactly what it missed. */
   private readonly lastSeq = new Map<string, number>();
   private activeRunId: string | null = null;
@@ -77,21 +90,33 @@ export class AxuneClient {
    * entirely. The one-time code is long spent; the session token is what makes
    * a device trusted.
    */
-  reconnectWithSession(urls: string[], sessionToken: string): void {
+  reconnectWithSession(
+    urls: string[],
+    sessionToken: string,
+    phonePrivateKey: string,
+    phonePublicKey: string,
+    desktopPublicKey: string,
+  ): void {
     this.candidates = urls;
     this.url = urls[0] ?? null;
     this.sessionToken = sessionToken;
+    this.identity = {
+      privateKey: fromBase64Url(phonePrivateKey),
+      publicKey: fromBase64Url(phonePublicKey),
+    };
+    this.desktopPublicKey = desktopPublicKey;
+    this.pairingToken = null;
     this.deliberateClose = false;
     this.open(() => {
-      // `resume` doubles as "authenticate me"; with no active run it simply
-      // proves the device is still trusted.
-      this.send({
-        type: 'resume',
-        token: sessionToken,
-        runId: this.activeRunId ?? 'none',
-        lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
-        lastSeenAt: this.lastSeenAt,
-      });
+      this.beginHandshake(() =>
+        this.send({
+          type: 'resume',
+          token: sessionToken,
+          runId: this.activeRunId ?? 'none',
+          lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
+          lastSeenAt: this.lastSeenAt,
+        }),
+      );
     });
   }
 
@@ -115,14 +140,19 @@ export class AxuneClient {
     this.candidates = payload.urls?.length ? payload.urls : [payload.url];
     this.url = this.candidates[0] ?? payload.url;
     this.deliberateClose = false;
+    this.identity = generateIdentity(getRandomBytes);
+    this.desktopPublicKey = payload.desktopPublicKey;
+    this.pairingToken = payload.token;
     this.open(() => {
-      this.send({
-        type: 'pair',
-        token: payload.token,
-        deviceName,
-        protocolVersion: PROTOCOL_VERSION,
-        lastSeenAt: this.lastSeenAt,
-      });
+      this.beginHandshake(() =>
+        this.send({
+          type: 'pair',
+          token: payload.token,
+          deviceName,
+          protocolVersion: PROTOCOL_VERSION,
+          lastSeenAt: this.lastSeenAt,
+        }),
+      );
     });
   }
 
@@ -170,9 +200,23 @@ export class AxuneClient {
    * Carries every known address as well as the one that worked, so a stored
    * pairing survives the machine moving to a new IP.
    */
-  get credential(): { url: string; urls: string[]; sessionToken: string } | null {
-    return this.url && this.sessionToken
-      ? { url: this.url, urls: this.orderedCandidates(), sessionToken: this.sessionToken }
+  get credential(): {
+    url: string;
+    urls: string[];
+    sessionToken: string;
+    phonePrivateKey: string;
+    phonePublicKey: string;
+    desktopPublicKey: string;
+  } | null {
+    return this.url && this.sessionToken && this.identity && this.desktopPublicKey
+      ? {
+          url: this.url,
+          urls: this.orderedCandidates(),
+          sessionToken: this.sessionToken,
+          phonePrivateKey: toBase64Url(this.identity.privateKey),
+          phonePublicKey: toBase64Url(this.identity.publicKey),
+          desktopPublicKey: this.desktopPublicKey,
+        }
       : null;
   }
 
@@ -263,7 +307,21 @@ export class AxuneClient {
     socket.onmessage = (raw) => {
       let message: ServerMessage;
       try {
-        message = JSON.parse(String(raw.data)) as ServerMessage;
+        const wire = JSON.parse(String(raw.data)) as {
+          type?: string;
+          serverNonce?: string;
+          protocolVersion?: number;
+          n?: number;
+          iv?: string;
+          c?: string;
+        };
+        if (wire.type === 'secure_welcome')
+          return this.finishHandshake(wire.serverNonce, wire.protocolVersion, onOpen);
+        if (wire.type !== 'secure_envelope' || !this.channel)
+          throw new Error('plaintext transport refused');
+        message = JSON.parse(
+          this.channel.open({ n: wire.n!, iv: wire.iv!, c: wire.c! }),
+        ) as ServerMessage;
       } catch {
         return;
       }
@@ -364,17 +422,73 @@ export class AxuneClient {
 
     setTimeout(() => {
       this.open(() => {
-        this.send({
-          type: 'resume',
-          token: this.sessionToken!,
-          runId: this.activeRunId ?? 'none',
-          lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
-        });
+        this.beginHandshake(() =>
+          this.send({
+            type: 'resume',
+            token: this.sessionToken!,
+            runId: this.activeRunId ?? 'none',
+            lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
+          }),
+        );
       });
     }, delay);
   }
 
+  private beginHandshake(after: () => void): void {
+    if (
+      !this.socket ||
+      !this.identity ||
+      !this.desktopPublicKey ||
+      !(this.sessionToken ?? this.pairingToken)
+    )
+      return this.socket?.close();
+    this.clientNonce = toBase64Url(getRandomBytes(32));
+    this.socket.send(
+      JSON.stringify({
+        type: 'secure_hello',
+        protocolVersion: PROTOCOL_VERSION,
+        phonePublicKey: toBase64Url(this.identity.publicKey),
+        clientNonce: this.clientNonce,
+      }),
+    );
+    (this.socket as WebSocket & { __axuneAfter?: () => void }).__axuneAfter = after;
+  }
+
+  private finishHandshake(
+    serverNonce: string | undefined,
+    version: number | undefined,
+    _onOpen: () => void,
+  ): void {
+    const after = (this.socket as (WebSocket & { __axuneAfter?: () => void }) | null)?.__axuneAfter;
+    const secret = this.sessionToken ?? this.pairingToken;
+    if (
+      !serverNonce ||
+      version !== PROTOCOL_VERSION ||
+      !secret ||
+      !this.clientNonce ||
+      !this.identity ||
+      !this.desktopPublicKey
+    )
+      return this.socket?.close();
+    try {
+      this.channel = new SecureChannel(
+        'phone',
+        this.identity.privateKey,
+        fromBase64Url(this.desktopPublicKey),
+        `${secret}:${this.clientNonce}:${serverNonce}`,
+        getRandomBytes,
+      );
+      after?.();
+    } catch {
+      this.socket?.close();
+    }
+  }
+
   private send(message: ClientMessage): void {
-    if (this.socket?.readyState === 1) this.socket.send(JSON.stringify(message));
+    if (this.socket?.readyState === 1 && this.channel) {
+      this.socket.send(
+        JSON.stringify({ type: 'secure_envelope', ...this.channel.seal(JSON.stringify(message)) }),
+      );
+    }
   }
 }

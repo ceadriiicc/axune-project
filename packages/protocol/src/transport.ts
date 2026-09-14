@@ -4,9 +4,39 @@
 // what an agent did, this describes how the two halves of Axune talk. An agent
 // event is payload here, never the envelope.
 
-import type { AgentEvent, AgentId, RunMode } from './events';
+import type { AgentEvent, AgentId, RunMode } from "./events";
 
-export const PROTOCOL_VERSION = 1;
+/** Version 2 removes the plaintext transport. Version 1 clients are refused. */
+export const PROTOCOL_VERSION = 2;
+
+/** The only frames allowed on the WebSocket. Application messages are always sealed. */
+export type WireMessage = SecureHello | SecureWelcome | SecureEnvelope;
+
+/**
+ * The unauthenticated setup frame. `phonePublicKey` is an X25519 public key;
+ * `clientNonce` is fresh connection entropy. Neither is a credential.
+ */
+export interface SecureHello {
+  type: "secure_hello";
+  protocolVersion: number;
+  phonePublicKey: string;
+  clientNonce: string;
+}
+
+/** Desktop contribution to a fresh connection. It is bound by the QR desktop key. */
+export interface SecureWelcome {
+  type: "secure_welcome";
+  protocolVersion: number;
+  serverNonce: string;
+}
+
+/** XChaCha20-Poly1305 envelope. Its plaintext is a ClientMessage or ServerMessage. */
+export interface SecureEnvelope {
+  type: "secure_envelope";
+  n: number;
+  iv: string;
+  c: string;
+}
 
 /** Everything the desktop knows about a project the phone might drive. */
 export interface ProjectSummary {
@@ -46,7 +76,7 @@ export interface GitSnapshot {
    * mid-rebase or with conflicts is the thing worth interrupting someone for.
    */
   conflicts: number;
-  inProgress: 'rebase' | 'merge' | 'cherry-pick' | null;
+  inProgress: "rebase" | "merge" | "cherry-pick" | null;
   detachedHead: boolean;
 }
 
@@ -56,24 +86,24 @@ export interface MachineSummary {
   name: string;
   platform: string;
   /** How the phone is reaching it. Remote arrives with the relay. */
-  connection: 'local' | 'relay';
+  connection: "local" | "relay";
 }
 
 /** What agents are currently permitted to do to the project. */
-export type Capability = 'read-only' | 'read-write';
+export type Capability = "read-only" | "read-write";
 
 export interface AgentStatus {
   agentId: AgentId;
   installed: boolean;
   version: string | null;
   /** Claude Code has no "am I logged in" command; `unknown` is honest. */
-  authenticated: 'yes' | 'no' | 'unknown';
+  authenticated: "yes" | "no" | "unknown";
 }
 
 /** Phone → Desktop. */
 export type ClientMessage =
   | {
-      type: 'pair';
+      type: "pair";
       token: string;
       deviceName: string;
       protocolVersion: number;
@@ -85,9 +115,15 @@ export type ClientMessage =
    * already seen for that run, so the desktop can replay only what was missed.
    * This is why every event carries `seq`.
    */
-  | { type: 'resume'; token: string; runId: string; lastSeq: number; lastSeenAt?: number }
   | {
-      type: 'start_run';
+      type: "resume";
+      token: string;
+      runId: string;
+      lastSeq: number;
+      lastSeenAt?: number;
+    }
+  | {
+      type: "start_run";
       runId: string;
       sessionId: string;
       prompt: string;
@@ -100,11 +136,11 @@ export type ClientMessage =
       write?: boolean;
     }
   /** Keep the branch an agent produced, or throw it away. */
-  | { type: 'resolve_changes'; runId: string; decision: 'keep' | 'discard' }
+  | { type: "resolve_changes"; runId: string; decision: "keep" | "discard" }
   /** Delete a branch an agent produced that was never merged. */
-  | { type: 'delete_branch'; branch: string }
-  | { type: 'stop_run'; runId: string }
-  | { type: 'ping' };
+  | { type: "delete_branch"; branch: string }
+  | { type: "stop_run"; runId: string }
+  | { type: "ping" };
 
 /** Desktop → Phone. */
 export type ServerMessage =
@@ -114,7 +150,7 @@ export type ServerMessage =
    * device could never resume — it would have to rescan after every drop.
    */
   | {
-      type: 'paired';
+      type: "paired";
       sessionToken: string;
       project: ProjectSummary;
       agents: AgentStatus[];
@@ -122,23 +158,27 @@ export type ServerMessage =
       capability: Capability;
       protocolVersion: number;
     }
-  | { type: 'pair_rejected'; reason: 'bad_token' | 'expired' | 'version_mismatch'; detail: string }
+  | {
+      type: "pair_rejected";
+      reason: "bad_token" | "expired" | "version_mismatch";
+      detail: string;
+    }
   /** A replayed or live agent event. Replays carry `replayed: true`. */
-  | { type: 'event'; event: AgentEvent; replayed?: boolean }
+  | { type: "event"; event: AgentEvent; replayed?: boolean }
   /** Sent after a resume, before any replayed events, so the phone can show a gap honestly. */
-  | { type: 'resumed'; runId: string; fromSeq: number; missedEvents: number }
-  | { type: 'project_changed'; project: ProjectSummary }
-  | { type: 'machine_changed'; machine: MachineSummary; capability: Capability }
-  | { type: 'agents_changed'; agents: AgentStatus[] }
+  | { type: "resumed"; runId: string; fromSeq: number; missedEvents: number }
+  | { type: "project_changed"; project: ProjectSummary }
+  | { type: "machine_changed"; machine: MachineSummary; capability: Capability }
+  | { type: "agents_changed"; agents: AgentStatus[] }
   /** Backlog of what happened, newest last. `sinceLastVisit` is how many are new. */
-  | { type: 'activity'; events: ActivityEvent[]; sinceLastVisit: number }
+  | { type: "activity"; events: ActivityEvent[]; sinceLastVisit: number }
   /** A single event as it happens, while the phone is connected. */
-  | { type: 'activity_event'; event: ActivityEvent }
+  | { type: "activity_event"; event: ActivityEvent }
   /** What a write run produced, once it has finished. */
-  | { type: 'changes'; runId: string; result: ChangeSet }
+  | { type: "changes"; runId: string; result: ChangeSet }
   /** Branches agents have produced and the user chose to keep. */
-  | { type: 'branches'; branches: AgentBranch[] }
-  | { type: 'pong' };
+  | { type: "branches"; branches: AgentBranch[] }
+  | { type: "pong" };
 
 /**
  * Something that happened on the desktop while nobody was necessarily looking.
@@ -159,21 +199,21 @@ export interface ActivityEvent {
 }
 
 export type ActivityKind =
-  | 'run.started'
-  | 'run.completed'
-  | 'run.stopped'
-  | 'run.failed'
-  | 'git.commit'
-  | 'git.branch'
-  | 'git.dirty'
-  | 'git.clean'
-  | 'git.pushed'
-  | 'device.paired'
-  | 'device.disconnected'
+  | "run.started"
+  | "run.completed"
+  | "run.stopped"
+  | "run.failed"
+  | "git.commit"
+  | "git.branch"
+  | "git.dirty"
+  | "git.clean"
+  | "git.pushed"
+  | "device.paired"
+  | "device.disconnected"
   /** A tool call the policy layer refused, kept with its reason. */
-  | 'policy.denied'
+  | "policy.denied"
   /** What a run sent off this machine: which files, how many bytes. */
-  | 'privacy.egress';
+  | "privacy.egress";
 
 /** The outcome of a write run: a branch, and what is on it. */
 export interface ChangeSet {
@@ -207,13 +247,13 @@ export interface ChangedFile {
   path: string;
   insertions: number;
   deletions: number;
-  status: 'modified' | 'created' | 'deleted';
+  status: "modified" | "created" | "deleted";
 }
 
 /** What the desktop encodes into the pairing QR code. */
 export interface PairingPayload {
   /** Always "axune" — lets the scanner reject unrelated QR codes immediately. */
-  kind: 'axune';
+  kind: "axune";
   protocolVersion: number;
   /** ws://<lan-ip>:<port>. Kept as the single address an older phone reads. */
   url: string;
@@ -235,6 +275,8 @@ export interface PairingPayload {
    */
   urls?: string[];
   token: string;
+  /** X25519 desktop public key, authenticated by the physical QR screen. */
+  desktopPublicKey: string;
   /** Epoch ms after which the desktop will refuse this token. */
   expiresAt: number;
   projectName: string;

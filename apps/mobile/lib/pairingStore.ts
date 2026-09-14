@@ -22,6 +22,11 @@ export interface StoredPairing {
    */
   urls?: string[];
   sessionToken: string;
+  /** Phone X25519 identity, Keychain-protected with the bearer credential. */
+  phonePrivateKey: string;
+  phonePublicKey: string;
+  /** Desktop public key came from the QR screen, never from the socket. */
+  desktopPublicKey: string;
   projectName: string;
   pairedAt: number;
 }
@@ -42,7 +47,14 @@ export async function loadPairing(): Promise<StoredPairing | null> {
     const raw = await SecureStore.getItemAsync(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredPairing;
-    if (!parsed.url || !parsed.sessionToken) return null;
+    if (
+      !parsed.url ||
+      !parsed.sessionToken ||
+      !parsed.phonePrivateKey ||
+      !parsed.phonePublicKey ||
+      !parsed.desktopPublicKey
+    )
+      return null;
     return parsed;
   } catch {
     return null;

@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 /**
  * The desktop's small amount of durable state.
@@ -32,9 +32,18 @@ export class SessionStore {
 
   // ---- trusted devices -------------------------------------------------
 
-  trustDevice(sessionToken: string, deviceName: string): void {
+  trustDevice(
+    sessionToken: string,
+    deviceName: string,
+    publicKey?: string,
+  ): void {
     const now = Date.now();
-    this.state.devices[sessionToken] = { deviceName, pairedAt: now, lastSeenAt: now };
+    this.state.devices[sessionToken] = {
+      deviceName,
+      pairedAt: now,
+      lastSeenAt: now,
+      publicKey,
+    };
     this.prune();
     this.save();
   }
@@ -62,6 +71,14 @@ export class SessionStore {
     return this.state.devices[sessionToken]?.deviceName ?? null;
   }
 
+  tokenForPublicKey(publicKey: string): string | null {
+    return (
+      Object.entries(this.state.devices).find(
+        ([, device]) => device.publicKey === publicKey,
+      )?.[0] ?? null
+    );
+  }
+
   /** Used by a "forget this phone" action, and to recover from a leaked code. */
   revokeAll(): void {
     this.state.devices = {};
@@ -74,7 +91,11 @@ export class SessionStore {
    * Remember the provider's session id for an Axune session, so the next prompt
    * continues the same conversation instead of starting over.
    */
-  rememberProviderSession(sessionId: string, agentId: string, providerSessionId: string): void {
+  rememberProviderSession(
+    sessionId: string,
+    agentId: string,
+    providerSessionId: string,
+  ): void {
     const key = `${sessionId}:${agentId}`;
     // Deleted first so the key moves to the end of the object: insertion order
     // is what `prune` uses to decide which conversations to forget.
@@ -100,7 +121,13 @@ export class SessionStore {
   private prune(): void {
     const cutoff = Date.now() - MAX_DEVICE_AGE_MS;
     const entries = Object.entries(this.state.devices)
-      .map(([token, device]) => [token, { ...device, lastSeenAt: device.lastSeenAt ?? device.pairedAt }] as const)
+      .map(
+        ([token, device]) =>
+          [
+            token,
+            { ...device, lastSeenAt: device.lastSeenAt ?? device.pairedAt },
+          ] as const,
+      )
       .filter(([, device]) => device.lastSeenAt >= cutoff)
       .sort((a, b) => b[1].lastSeenAt - a[1].lastSeenAt)
       .slice(0, MAX_DEVICES);
@@ -111,7 +138,9 @@ export class SessionStore {
     // conversations least likely to be returned to.
     const sessions = Object.entries(this.state.providerSessions);
     if (sessions.length > MAX_PROVIDER_SESSIONS) {
-      this.state.providerSessions = Object.fromEntries(sessions.slice(-MAX_PROVIDER_SESSIONS));
+      this.state.providerSessions = Object.fromEntries(
+        sessions.slice(-MAX_PROVIDER_SESSIONS),
+      );
     }
   }
 
@@ -119,7 +148,7 @@ export class SessionStore {
 
   private load(): void {
     try {
-      const raw = readFileSync(this.file, 'utf8');
+      const raw = readFileSync(this.file, "utf8");
       const parsed = JSON.parse(raw) as Partial<PersistedState>;
       this.state = {
         devices: parsed.devices ?? {},
@@ -137,7 +166,9 @@ export class SessionStore {
   private save(): void {
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+      writeFileSync(this.file, JSON.stringify(this.state, null, 2), {
+        mode: 0o600,
+      });
     } catch {
       // Losing persistence degrades convenience, never correctness: the phone
       // simply has to pair again. Not worth crashing the desktop over.
@@ -155,10 +186,14 @@ interface StoredDevice {
   pairedAt: number;
   /** Last time this device actually connected. Absent in files written before pruning existed. */
   lastSeenAt?: number;
+  /** X25519 public key; this identifies a returning phone without sending its bearer token. */
+  publicKey?: string;
 }
 
 function defaultPath(): string {
   const base =
-    process.env.LOCALAPPDATA ?? process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
-  return join(base, 'Axune', 'desktop-state.json');
+    process.env.LOCALAPPDATA ??
+    process.env.XDG_STATE_HOME ??
+    join(homedir(), ".local", "state");
+  return join(base, "Axune", "desktop-state.json");
 }

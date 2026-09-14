@@ -192,7 +192,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       const updated = reduceRun({ ...previous, lastEventAt: Date.now() }, event);
 
       if (updated.status !== 'working' && previous.status === 'working') {
-        setHistory((past) => [summarise(updated), ...past.filter((e) => e.runId !== updated.runId)]);
+        setHistory((past) => [
+          summarise(updated),
+          ...past.filter((e) => e.runId !== updated.runId),
+        ]);
       }
 
       if (index >= 0) {
@@ -222,6 +225,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               url: credential.url,
               urls: credential.urls,
               sessionToken: credential.sessionToken,
+              phonePrivateKey: credential.phonePrivateKey,
+              phonePublicKey: credential.phonePublicKey,
+              desktopPublicKey: credential.desktopPublicKey,
               projectName: name,
               pairedAt: Date.now(),
             });
@@ -242,6 +248,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             url: credential.url,
             urls: credential.urls,
             sessionToken: credential.sessionToken,
+            phonePrivateKey: credential.phonePrivateKey,
+            phonePublicKey: credential.phonePublicKey,
+            desktopPublicKey: credential.desktopPublicKey,
             projectName: proj.name,
             pairedAt: Date.now(),
           });
@@ -461,6 +470,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       client.reconnectWithSession(
         stored.urls?.length ? stored.urls : [stored.url],
         stored.sessionToken,
+        stored.phonePrivateKey,
+        stored.phonePublicKey,
+        stored.desktopPublicKey,
       );
     })();
     return () => {
@@ -534,7 +546,12 @@ export function useWorkspace(): WorkspaceState {
 function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
   switch (event.type) {
     case 'run_started':
-      return { ...run, prompt: event.prompt || run.prompt, status: 'working', startedAt: Date.now() };
+      return {
+        ...run,
+        prompt: event.prompt || run.prompt,
+        status: 'working',
+        startedAt: Date.now(),
+      };
     case 'message_delta':
       return { ...run, text: run.text + event.text };
     case 'tool_started':
@@ -597,7 +614,8 @@ function summarise(run: LiveRun): RunSummary {
     prompt: run.prompt,
     startedAt: run.startedAt ?? Date.now(),
     finishedAt: Date.now(),
-    outcome: run.status === 'finished' ? 'completed' : run.status === 'stopped' ? 'stopped' : 'failed',
+    outcome:
+      run.status === 'finished' ? 'completed' : run.status === 'stopped' ? 'stopped' : 'failed',
     excerpt: firstLine(run.text),
     filesRead: run.activity.filter((a) => a.label === 'Read').length,
     commands: run.activity.filter((a) => a.label === 'Bash').length,
@@ -618,7 +636,11 @@ function shortDetail(input: string): string | undefined {
 }
 
 function firstLine(text: string): string {
-  const line = text.trim().split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
+  const line =
+    text
+      .trim()
+      .split(/\r?\n/)
+      .find((l) => l.trim().length > 0) ?? '';
   return line.replace(/[*`#]/g, '').slice(0, 120);
 }
 

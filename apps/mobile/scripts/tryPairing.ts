@@ -124,7 +124,15 @@ function attempt(candidates: string[], timeoutMs = 12_000) {
         }
       }, timeoutMs);
 
-      client.reconnectWithSession(candidates, 'a-trusted-session-token');
+      // This legacy address-walk harness has no encrypted desktop. It supplies
+      // syntactically valid identity material solely to exercise candidate order.
+      client.reconnectWithSession(
+        candidates,
+        'a-trusted-session-token',
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      );
     },
   );
 }
@@ -190,7 +198,8 @@ async function main() {
   await check('every address dead fails honestly rather than hanging', async () => {
     const { states, detail, client } = await attempt(['ws://127.0.0.1:1', 'ws://127.0.0.1:2']);
     client.disconnect();
-    if (!states.includes('failed')) return `FAIL: did not report failure, saw ${states.join(' > ')}`;
+    if (!states.includes('failed'))
+      return `FAIL: did not report failure, saw ${states.join(' > ')}`;
     if (!detail || !/any known address/i.test(detail)) {
       return `FAIL: unhelpful reason: ${detail ?? 'none'}`;
     }

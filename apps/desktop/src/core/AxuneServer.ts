@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto';
-import { hostname, platform } from 'node:os';
+import { randomBytes, randomUUID } from "node:crypto";
+import { hostname, platform } from "node:os";
 
 import {
   ClaudeCodeAdapter,
   GeminiAdapter,
   type AgentAdapter,
   type RunningRun,
-} from '@axune/agent-core';
-import { WorktreeManager, type Worktree } from '@axune/git-core';
+} from "@axune/agent-core";
+import { WorktreeManager, type Worktree } from "@axune/git-core";
 import {
   PROTOCOL_VERSION,
   type Capability,
@@ -18,16 +18,24 @@ import {
   type ClientMessage,
   type ProjectSummary,
   type ServerMessage,
-} from '@axune/protocol';
-import { WebSocketServer, type WebSocket } from 'ws';
+  type SecureEnvelope,
+  type SecureHello,
+  type WireMessage,
+} from "@axune/protocol";
+import {
+  fromBase64Url,
+  SecureChannel,
+  toBase64Url,
+} from "@axune/secure-channel";
+import { WebSocketServer, type WebSocket } from "ws";
 
-import { ActivityLog } from './ActivityLog';
-import { EgressLedger } from './EgressLedger';
-import { GitWatcher } from './GitWatcher';
-import { readGitSnapshot } from './gitSnapshot';
-import { PairingManager } from './PairingManager';
-import { RunRegistry } from './RunRegistry';
-import { SessionStore } from './SessionStore';
+import { ActivityLog } from "./ActivityLog";
+import { EgressLedger } from "./EgressLedger";
+import { GitWatcher } from "./GitWatcher";
+import { readGitSnapshot } from "./gitSnapshot";
+import { PairingManager } from "./PairingManager";
+import { RunRegistry } from "./RunRegistry";
+import { SessionStore } from "./SessionStore";
 
 /**
  * The desktop half of Axune: accepts one paired phone, runs agents against the
@@ -49,16 +57,19 @@ export class AxuneServer {
    * reached even once its adapter existed.
    */
   private readonly adapters = new Map<AgentId, AgentAdapter>([
-    ['claude-code', new ClaudeCodeAdapter()],
+    ["claude-code", new ClaudeCodeAdapter()],
     // Registered whether or not the CLI is present. Detection reports it as
     // missing, which is a better answer than pretending the agent does not
     // exist - the phone can then say "not installed" rather than "unknown
     // agent", and the difference matters to someone deciding what to install.
-    ['gemini-cli', new GeminiAdapter()],
+    ["gemini-cli", new GeminiAdapter()],
   ]);
   private readonly running = new Map<string, RunningRun>();
   /** Sockets that have completed pairing, with their session token. */
   private readonly authed = new WeakMap<WebSocket, string>();
+  /** Created only after a version-2 hello; no application JSON is accepted outside it. */
+  private readonly channels = new WeakMap<WebSocket, SecureChannel>();
+  private readonly phoneKeys = new WeakMap<WebSocket, string>();
   /** Observers for the local UI — the terminal now, the Electron window later. */
   private readonly eventListeners = new Set<(event: AgentEvent) => void>();
   private readonly connectionListeners = new Set<(state: string) => void>();
@@ -98,11 +109,11 @@ export class AxuneServer {
     // Bound to all interfaces so the phone can reach it over the LAN. It is
     // never exposed beyond that: an unpaired socket can do nothing at all.
     this.wss = new WebSocketServer({ port });
-    this.wss.on('connection', (socket) => this.onConnection(socket));
+    this.wss.on("connection", (socket) => this.onConnection(socket));
 
     await new Promise<void>((resolve, reject) => {
-      this.wss!.once('listening', resolve);
-      this.wss!.once('error', (error) => {
+      this.wss!.once("listening", resolve);
+      this.wss!.once("error", (error) => {
         // The port is taken, most likely by another Axune. Drop the dead
         // server so a caller can retry on a different port with a clean slate.
         this.wss?.close();
@@ -114,20 +125,29 @@ export class AxuneServer {
     // Watch the repository even with no phone connected — the changes worth
     // reporting are the ones that happen while the user is away.
     if (this.project.isGitRepo) {
-      this.watcher = new GitWatcher(this.project.path, this.activity, () => this.project.branch);
+      this.watcher = new GitWatcher(
+        this.project.path,
+        this.activity,
+        () => this.project.branch,
+      );
       await this.watcher.start();
     }
-    this.activity.onEvent((event) => this.broadcast({ type: 'activity_event', event }));
+    this.activity.onEvent((event) =>
+      this.broadcast({ type: "activity_event", event }),
+    );
 
     const address = this.wss.address();
-    return typeof address === 'object' && address ? address.port : port;
+    return typeof address === "object" && address ? address.port : port;
   }
 
   async stop(): Promise<void> {
     this.watcher?.stop();
-    for (const run of this.running.values()) await run.stop().catch(() => undefined);
+    for (const run of this.running.values())
+      await run.stop().catch(() => undefined);
     this.running.clear();
-    await new Promise<void>((resolve) => this.wss?.close(() => resolve()) ?? resolve());
+    await new Promise<void>(
+      (resolve) => this.wss?.close(() => resolve()) ?? resolve(),
+    );
     this.wss = null;
   }
 
@@ -147,12 +167,12 @@ export class AxuneServer {
 
   setProject(project: ProjectSummary): void {
     this.project = project;
-    this.broadcast({ type: 'project_changed', project });
+    this.broadcast({ type: "project_changed", project });
   }
 
   /** The machine the phone is controlling. Shown so the user knows which computer. */
   machine(): MachineSummary {
-    return { name: hostname(), platform: platform(), connection: 'local' };
+    return { name: hostname(), platform: platform(), connection: "local" };
   }
 
   /**
@@ -161,11 +181,12 @@ export class AxuneServer {
    * thing being changed.
    */
   capability(): Capability {
-    return 'read-write';
+    return "read-write";
   }
 
   private get worktrees(): WorktreeManager {
-    if (!this.worktreesCache) this.worktreesCache = new WorktreeManager(this.project.path);
+    if (!this.worktreesCache)
+      this.worktreesCache = new WorktreeManager(this.project.path);
     return this.worktreesCache;
   }
 
@@ -195,37 +216,97 @@ export class AxuneServer {
   }
 
   private onConnection(socket: WebSocket): void {
-    socket.on('close', () => {
+    socket.on("close", () => {
       if (this.authed.has(socket)) {
-        this.activity.record('device.disconnected', 'Phone disconnected');
-        this.announce('device disconnected');
+        this.activity.record("device.disconnected", "Phone disconnected");
+        this.announce("device disconnected");
       }
     });
-    socket.on('message', (raw) => {
-      let message: ClientMessage;
+    socket.on("message", (raw) => {
+      let wire: WireMessage;
       try {
-        message = JSON.parse(String(raw)) as ClientMessage;
+        wire = JSON.parse(String(raw)) as WireMessage;
       } catch {
         return; // Unparseable input from an unpaired socket is simply ignored.
       }
-      void this.handle(socket, message);
+      if (wire.type === "secure_hello")
+        return this.beginSecureConnection(socket, wire);
+      if (wire.type !== "secure_envelope") return;
+      const channel = this.channels.get(socket);
+      if (!channel) return socket.close();
+      try {
+        void this.handle(
+          socket,
+          JSON.parse(channel.open(wire)) as ClientMessage,
+        );
+      } catch {
+        socket.close(); // Authentication failure, replay, or malformed ciphertext.
+      }
     });
   }
 
-  private async handle(socket: WebSocket, message: ClientMessage): Promise<void> {
-    if (message.type === 'pair') {
-      const result = this.pairing.redeem(message.token, message.deviceName, message.protocolVersion);
+  private beginSecureConnection(socket: WebSocket, hello: SecureHello): void {
+    if (hello.protocolVersion !== PROTOCOL_VERSION) return socket.close();
+    try {
+      const phoneKey = fromBase64Url(hello.phonePublicKey);
+      const sessionToken = this.store.tokenForPublicKey(hello.phonePublicKey);
+      const pairingToken = this.pairing.pairingSalt();
+      const secret = sessionToken ?? pairingToken;
+      if (phoneKey.length !== 32 || !secret) return socket.close();
+      const serverNonce = toBase64Url(new Uint8Array(randomBytes(32)));
+      const salt = `${secret}:${hello.clientNonce}:${serverNonce}`;
+      this.channels.set(
+        socket,
+        new SecureChannel(
+          "desktop",
+          this.pairing.identity.privateKey,
+          phoneKey,
+          salt,
+          (n) => new Uint8Array(randomBytes(n)),
+        ),
+      );
+      this.phoneKeys.set(socket, hello.phonePublicKey);
+      socket.send(
+        JSON.stringify({
+          type: "secure_welcome",
+          protocolVersion: PROTOCOL_VERSION,
+          serverNonce,
+        }),
+      );
+    } catch {
+      socket.close();
+    }
+  }
+
+  private async handle(
+    socket: WebSocket,
+    message: ClientMessage,
+  ): Promise<void> {
+    if (message.type === "pair") {
+      const result = this.pairing.redeem(
+        message.token,
+        message.deviceName,
+        message.protocolVersion,
+      );
       if (!result.ok) {
-        return this.send(socket, { type: 'pair_rejected', reason: result.reason, detail: result.detail });
+        return this.send(socket, {
+          type: "pair_rejected",
+          reason: result.reason,
+          detail: result.detail,
+        });
       }
       this.authed.set(socket, result.sessionToken);
-      this.store.trustDevice(result.sessionToken, message.deviceName);
-      this.activity.record('device.paired', `${message.deviceName} paired`);
+      this.store.trustDevice(
+        result.sessionToken,
+        message.deviceName,
+        this.phoneKeys.get(socket),
+      );
+      this.activity.record("device.paired", `${message.deviceName} paired`);
       this.announce(`${message.deviceName} paired`);
       this.sendActivity(socket, message.lastSeenAt);
       void this.sendBranches(socket);
       return this.send(socket, {
-        type: 'paired',
+        type: "paired",
         sessionToken: result.sessionToken,
         project: await this.projectNow(),
         agents: await this.agentStatuses(),
@@ -235,40 +316,48 @@ export class AxuneServer {
       });
     }
 
-    if (message.type === 'resume') {
+    if (message.type === "resume") {
       // A reconnecting phone presents the session token it already holds.
       if (!this.pairing.isPaired(message.token)) {
         return this.send(socket, {
-          type: 'pair_rejected',
-          reason: 'bad_token',
-          detail: 'This device is not paired. Scan the QR code again.',
+          type: "pair_rejected",
+          reason: "bad_token",
+          detail: "This device is not paired. Scan the QR code again.",
         });
       }
       this.authed.set(socket, message.token);
       // Keeps this phone at the top of the trusted list, so expiry retires the
       // tokens of devices that never come back rather than the one in use.
       this.store.touchDevice(message.token);
-      this.announce(`device reconnected, replaying run ${message.runId.slice(0, 8)}`);
+      this.announce(
+        `device reconnected, replaying run ${message.runId.slice(0, 8)}`,
+      );
       this.sendActivity(socket, message.lastSeenAt);
       void this.sendBranches(socket);
 
       const slice = this.registry.since(message.runId, message.lastSeq);
       this.send(socket, {
-        type: 'resumed',
+        type: "resumed",
         runId: message.runId,
         fromSeq: message.lastSeq,
         missedEvents: slice.events.length,
       });
       for (const event of slice.events) {
-        this.send(socket, { type: 'event', event, replayed: true });
+        this.send(socket, { type: "event", event, replayed: true });
       }
 
       // A resumed device knows its token but not what the desktop is pointed
       // at — the project may have changed while it was away.
-      this.send(socket, { type: 'project_changed', project: await this.projectNow() });
-      this.send(socket, { type: 'agents_changed', agents: await this.agentStatuses() });
       this.send(socket, {
-        type: 'machine_changed',
+        type: "project_changed",
+        project: await this.projectNow(),
+      });
+      this.send(socket, {
+        type: "agents_changed",
+        agents: await this.agentStatuses(),
+      });
+      this.send(socket, {
+        type: "machine_changed",
         machine: this.machine(),
         capability: this.capability(),
       });
@@ -278,41 +367,54 @@ export class AxuneServer {
     // Everything below requires a paired socket.
     if (!this.authed.has(socket)) return;
 
-    if (message.type === 'ping') return this.send(socket, { type: 'pong' });
+    if (message.type === "ping") return this.send(socket, { type: "pong" });
 
-    if (message.type === 'start_run') return void this.startRun(message);
+    if (message.type === "start_run") return void this.startRun(message);
 
-    if (message.type === 'stop_run') {
+    if (message.type === "stop_run") {
       const run = this.running.get(message.runId);
       await run?.stop().catch(() => undefined);
       return;
     }
 
-    if (message.type === 'delete_branch') {
+    if (message.type === "delete_branch") {
       await this.worktrees.deleteBranch(message.branch).catch(() => undefined);
-      this.activity.record('run.stopped', 'Deleted a branch', message.branch);
+      this.activity.record("run.stopped", "Deleted a branch", message.branch);
       await this.sendBranches(socket);
       return;
     }
 
-    if (message.type === 'resolve_changes') {
+    if (message.type === "resolve_changes") {
       const worktree = this.pending.get(message.runId);
       if (!worktree) return;
       this.pending.delete(message.runId);
 
-      if (message.decision === 'discard') {
+      if (message.decision === "discard") {
         await this.worktrees.discard(worktree);
-        this.activity.record('run.stopped', 'Discarded agent changes', worktree.branch);
+        this.activity.record(
+          "run.stopped",
+          "Discarded agent changes",
+          worktree.branch,
+        );
       } else {
-        this.activity.record('run.completed', 'Kept agent changes', worktree.branch);
+        this.activity.record(
+          "run.completed",
+          "Kept agent changes",
+          worktree.branch,
+        );
       }
-      this.broadcast({ type: 'project_changed', project: await this.projectNow() });
+      this.broadcast({
+        type: "project_changed",
+        project: await this.projectNow(),
+      });
       await this.sendBranches(socket);
       return;
     }
   }
 
-  private async startRun(message: Extract<ClientMessage, { type: 'start_run' }>): Promise<void> {
+  private async startRun(
+    message: Extract<ClientMessage, { type: "start_run" }>,
+  ): Promise<void> {
     if (this.running.has(message.runId)) return; // Idempotent: a retried start must not double-run.
 
     this.registry.open(message.runId);
@@ -325,17 +427,17 @@ export class AxuneServer {
     if (requested.length > 1) {
       return this.failRun(
         message,
-        'claude-code',
-        'Running several agents on one prompt is not built yet. Ask one agent at a time.',
+        "claude-code",
+        "Running several agents on one prompt is not built yet. Ask one agent at a time.",
       );
     }
-    const agentId: AgentId = requested[0] ?? 'claude-code';
+    const agentId: AgentId = requested[0] ?? "claude-code";
     const adapter = this.adapters.get(agentId);
     if (!adapter) {
       return this.failRun(
         message,
         agentId,
-        `This desktop has no adapter for ${agentId}. Installed: ${[...this.adapters.keys()].join(', ')}.`,
+        `This desktop has no adapter for ${agentId}. Installed: ${[...this.adapters.keys()].join(", ")}.`,
       );
     }
 
@@ -344,7 +446,11 @@ export class AxuneServer {
     // failure; the useful answer names the CLI and says it is missing.
     const detection = await adapter.detect();
     if (!detection.installed) {
-      return this.failRun(message, agentId, `${agentId} is not installed on this machine. ${detection.detail}`);
+      return this.failRun(
+        message,
+        agentId,
+        `${agentId} is not installed on this machine. ${detection.detail}`,
+      );
     }
 
     // A write run gets its own branch and directory. Failing to create one is
@@ -380,39 +486,55 @@ export class AxuneServer {
         // stopped or why - which is precisely what makes the rest of the
         // logging worth having, and what would have explained a run that spent
         // forty seconds being denied in near silence.
-        if (event.type === 'tool_finished' && !event.ok) {
-          this.activity.record('policy.denied', truncate(event.output ?? 'Denied', 120));
+        if (event.type === "tool_finished" && !event.ok) {
+          this.activity.record(
+            "policy.denied",
+            truncate(event.output ?? "Denied", 120),
+          );
         }
 
-        this.broadcast({ type: 'event', event });
+        this.broadcast({ type: "event", event });
         for (const listener of this.eventListeners) listener(event);
       },
     );
 
-    this.activity.record('run.started', truncate(message.prompt));
+    this.activity.record("run.started", truncate(message.prompt));
 
     this.running.set(message.runId, run);
     void run.done
       .then(async (handle) => {
         const kind =
-          handle.outcome === 'completed'
-            ? 'run.completed'
-            : handle.outcome === 'stopped'
-              ? 'run.stopped'
-              : 'run.failed';
-        this.activity.record(kind, `Run ${handle.outcome}`, truncate(message.prompt));
+          handle.outcome === "completed"
+            ? "run.completed"
+            : handle.outcome === "stopped"
+              ? "run.stopped"
+              : "run.failed";
+        this.activity.record(
+          kind,
+          `Run ${handle.outcome}`,
+          truncate(message.prompt),
+        );
 
         // Say what this run sent, in the same place everything else is
         // recorded. Null when it read nothing: a run that sent nothing should
         // not leave a note claiming otherwise.
         const sent = this.egress.close(message.runId);
-        if (sent) this.activity.record('privacy.egress', sent, truncate(message.prompt));
+        if (sent)
+          this.activity.record(
+            "privacy.egress",
+            sent,
+            truncate(message.prompt),
+          );
 
-        if (worktree) await this.reportChanges(worktree, message.runId, message.prompt);
+        if (worktree)
+          await this.reportChanges(worktree, message.runId, message.prompt);
 
         // A run often changes the working tree; tell the phone what it looks
         // like now rather than leaving a stale snapshot on screen.
-        this.broadcast({ type: 'project_changed', project: await this.projectNow() });
+        this.broadcast({
+          type: "project_changed",
+          project: await this.projectNow(),
+        });
         if (handle.providerSessionId) {
           this.store.rememberProviderSession(
             message.sessionId,
@@ -432,12 +554,16 @@ export class AxuneServer {
    * a finished, failed run with a reason a person can act on.
    */
   private failRun(
-    message: Extract<ClientMessage, { type: 'start_run' }>,
+    message: Extract<ClientMessage, { type: "start_run" }>,
     agentId: AgentId,
     reason: string,
   ): void {
     let seq = 0;
-    const emit = (body: { type: 'error'; message: string; recoverable: boolean } | { type: 'run_finished'; outcome: 'failed' }) => {
+    const emit = (
+      body:
+        | { type: "error"; message: string; recoverable: boolean }
+        | { type: "run_finished"; outcome: "failed" },
+    ) => {
       const event = {
         seq: seq++,
         runId: message.runId,
@@ -447,14 +573,14 @@ export class AxuneServer {
         ...body,
       } as AgentEvent;
       this.registry.record(event);
-      this.broadcast({ type: 'event', event });
+      this.broadcast({ type: "event", event });
       for (const listener of this.eventListeners) listener(event);
     };
 
     // No need to open the run explicitly: record() does it.
-    emit({ type: 'error', message: reason, recoverable: false });
-    emit({ type: 'run_finished', outcome: 'failed' });
-    this.activity.record('run.failed', reason, truncate(message.prompt));
+    emit({ type: "error", message: reason, recoverable: false });
+    emit({ type: "run_finished", outcome: "failed" });
+    this.activity.record("run.failed", reason, truncate(message.prompt));
   }
 
   /**
@@ -462,15 +588,22 @@ export class AxuneServer {
    * phone to keep or throw away. The worktree directory is released either way;
    * the branch survives until the user decides.
    */
-  private async reportChanges(worktree: Worktree, runId: string, prompt: string): Promise<void> {
+  private async reportChanges(
+    worktree: Worktree,
+    runId: string,
+    prompt: string,
+  ): Promise<void> {
     try {
       const files = await this.worktrees.changes(worktree);
       const patch = await this.worktrees.diff(worktree);
-      const commit = await this.worktrees.commit(worktree, `Axune: ${truncate(prompt, 60)}`);
+      const commit = await this.worktrees.commit(
+        worktree,
+        `Axune: ${truncate(prompt, 60)}`,
+      );
       const behindBy = await this.worktrees.behindBy(worktree);
 
       this.broadcast({
-        type: 'changes',
+        type: "changes",
         runId,
         result: {
           branch: worktree.branch,
@@ -502,20 +635,32 @@ export class AxuneServer {
     const branches = await this.worktrees
       .branches(this.project.branch)
       .catch(() => []);
-    this.send(socket, { type: 'branches', branches });
+    this.send(socket, { type: "branches", branches });
   }
 
   /** Hand a freshly connected phone the backlog, and say how much is new. */
-  private sendActivity(socket: WebSocket, lastSeenAt: number | undefined): void {
+  private sendActivity(
+    socket: WebSocket,
+    lastSeenAt: number | undefined,
+  ): void {
     this.send(socket, {
-      type: 'activity',
+      type: "activity",
       events: this.activity.recent(),
       sinceLastVisit: this.activity.countSince(lastSeenAt),
     });
   }
 
   private send(socket: WebSocket, message: ServerMessage): void {
-    if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+    const channel = this.channels.get(socket);
+    if (socket.readyState === socket.OPEN && channel) {
+      const envelope = channel.seal(JSON.stringify(message));
+      socket.send(
+        JSON.stringify({
+          type: "secure_envelope",
+          ...envelope,
+        } satisfies SecureEnvelope),
+      );
+    }
   }
 
   private broadcast(message: ServerMessage): void {
@@ -537,6 +682,6 @@ export class AxuneServer {
 
 /** Prompts can be long; activity rows get one line. */
 function truncate(text: string, max = 90): string {
-  const line = text.replace(/\s+/g, ' ').trim();
+  const line = text.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max)}…` : line;
 }
