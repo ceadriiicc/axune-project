@@ -23,8 +23,36 @@ export class ActivityLog {
   constructor(
     private readonly file = defaultPath(),
     private readonly max = 300,
+    /**
+     * How long an entry may live, regardless of how few there are.
+     *
+     * A count cap alone keeps a quiet machine's history for ever: three
+     * hundred entries on a laptop used twice a week is a year of prompts and
+     * branch names sitting in a file. Thirty days matches the trusted-device
+     * expiry, so nothing here outlives the credential that produced it.
+     */
+    private readonly maxAgeMs = 30 * 24 * 60 * 60 * 1000,
   ) {
     this.load();
+    this.prune();
+  }
+
+  /** Drop entries that are too old or too many. */
+  private prune(): void {
+    const cutoff = Date.now() - this.maxAgeMs;
+    const kept = this.events.filter((event) => event.at >= cutoff);
+    if (kept.length !== this.events.length) this.events = kept;
+    if (this.events.length > this.max) {
+      this.events.splice(0, this.events.length - this.max);
+    }
+  }
+
+  /** Forget every recorded event. Part of "forget this machine". */
+  clear(): number {
+    const removed = this.events.length;
+    this.events = [];
+    this.save();
+    return removed;
   }
 
   record(kind: ActivityKind, summary: string, detail?: string): ActivityEvent {
@@ -37,7 +65,7 @@ export class ActivityLog {
     };
 
     this.events.push(event);
-    if (this.events.length > this.max) this.events.splice(0, this.events.length - this.max);
+    this.prune();
     this.save();
 
     for (const listener of this.listeners) listener(event);

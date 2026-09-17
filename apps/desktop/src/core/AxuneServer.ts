@@ -4,6 +4,7 @@ import { hostname, platform } from 'node:os';
 import {
   ClaudeCodeAdapter,
   GeminiAdapter,
+  redactSecrets,
   type AgentAdapter,
   type RunningRun,
 } from '@axune/agent-core';
@@ -425,6 +426,41 @@ export class AxuneServer {
   }
 
   /**
+   * Forget everything this machine remembers about the phone and the work.
+   *
+   * Trusted devices, resumable provider sessions, the activity log and the
+   * egress ledger. Each of those expires on its own now, but expiry is for
+   * people who are willing to wait; this is for someone who wants it gone
+   * today - after handing the laptop on, or after a phone is lost.
+   *
+   * Reports what it removed rather than succeeding quietly. A privacy control
+   * that gives no evidence of having done anything is indistinguishable from
+   * one that is broken, and the user has no way to check the files.
+   *
+   * Deliberately does NOT touch the repository, any worktree, or any branch an
+   * agent produced. Those are the user's work, not Axune's record of it.
+   */
+  forgetEverything(): string {
+    const store = this.store.forgetEverything();
+    const events = this.activity.clear();
+    this.egress.clear();
+    this.pairing.revokeAll();
+
+    const parts = [
+      `${store.devices} trusted ${store.devices === 1 ? 'device' : 'devices'}`,
+      `${store.providerSessions} resumable ${store.providerSessions === 1 ? 'conversation' : 'conversations'}`,
+      `${events} activity ${events === 1 ? 'entry' : 'entries'}`,
+      'the egress ledger',
+    ];
+    const summary = `Forgotten: ${parts.join(', ')}. Your repository and branches are untouched.`;
+
+    // Recorded after the wipe on purpose: the log should show that it happened,
+    // and this is the only entry that survives it.
+    this.activity.record('device.disconnected', 'Axune was told to forget everything', summary);
+    return summary;
+  }
+
+  /**
    * Refuse a run the desktop cannot serve, in the run's own event stream.
    *
    * The phone shows a prompt the instant it is sent, so a request that is
@@ -466,7 +502,12 @@ export class AxuneServer {
     try {
       const files = await this.worktrees.changes(worktree);
       const patch = await this.worktrees.diff(worktree);
-      const commit = await this.worktrees.commit(worktree, `Axune: ${truncate(prompt, 60)}`);
+      // Redacted before it becomes permanent. A commit message outlives every
+      // other record here: keep the branch, merge it, push it, and the prompt
+      // is in the repository for ever and in every clone. People paste things
+      // into prompts, and a subject line is the worst place to find out.
+      const subject = `Axune: ${truncate(redactSecrets(prompt), 60)}`;
+      const commit = await this.worktrees.commit(worktree, subject);
       const behindBy = await this.worktrees.behindBy(worktree);
 
       this.broadcast({
