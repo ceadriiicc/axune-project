@@ -5,7 +5,7 @@ import type {
   GitSnapshot,
   ProjectSummary,
 } from '@axune/protocol';
-import type { LiveRun, RunSummary } from '@/lib/WorkspaceContext';
+import type { LiveRun, RunSummary, Thread } from '@/lib/WorkspaceContext';
 
 const now = Date.now();
 
@@ -63,6 +63,40 @@ export const demoHistory: RunSummary[] = [
     excerpt: 'The device was retaining an old address before trying the hostname candidate.',
     filesRead: 6,
     commands: 2,
+  },
+];
+
+export const demoThreads: Thread[] = [
+  {
+    id: 'navigation-review',
+    startedAt: now - 1000 * 60 * 60 * 3,
+    runs: [
+      {
+        ...demoLiveRun,
+        runId: 'navigation-review-run',
+        status: 'finished',
+        outcome: 'completed',
+        text: 'The app currently has a useful Home, Sessions, and pairing flow. The session screen should make progress and decisions easier to scan.',
+        startedAt: now - 1000 * 60 * 60 * 3,
+        lastEventAt: now - 1000 * 60 * 60 * 2,
+      },
+    ],
+  },
+  {
+    id: 'reconnect-debug',
+    startedAt: now - 1000 * 60 * 60 * 26,
+    runs: [
+      {
+        ...demoLiveRun,
+        runId: 'reconnect-debug-run',
+        prompt: 'Explain why the pairing reconnect failed.',
+        status: 'finished',
+        outcome: 'completed',
+        text: 'The device retained an obsolete address before trying the hostname candidate.',
+        startedAt: now - 1000 * 60 * 60 * 26,
+        lastEventAt: now - 1000 * 60 * 60 * 25,
+      },
+    ],
   },
 ];
 
