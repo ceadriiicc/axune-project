@@ -87,7 +87,7 @@ export function DemoSessionChat({ thread, active = false }: { thread: Thread; ac
       </ScrollView>
       <View style={styles.composer}>
         <View style={styles.composerTop}>
-          <Text style={styles.composerHint}>This prompt</Text>
+          <Text style={styles.composerHint}>Access for this prompt</Text>
           <Pressable
             accessibilityRole="switch"
             accessibilityState={{ checked: allowWrite }}
@@ -147,7 +147,17 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeI
     navCenter: { alignItems: 'center' },
     navTitle: { color: color.text, fontSize: 15, fontWeight: '700' },
     navSub: { color: color.textMuted, fontSize: 11, marginTop: 1 },
-    content: { padding: 22, gap: 20, paddingBottom: 130 + insets.bottom },
+    // Bottom-anchored, like every other conversation on a phone. A short
+    // exchange used to sit at the top with a void of dead space between it and
+    // the composer; flexGrow lets the container fill the scroll view so the
+    // content settles against the box you type into.
+    content: {
+      padding: 22,
+      gap: 20,
+      paddingBottom: 130 + insets.bottom,
+      flexGrow: 1,
+      justifyContent: 'flex-end',
+    },
     prompt: { backgroundColor: color.panelAlt, borderRadius: 17, padding: 16, gap: 7 },
     promptLabel: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
     promptText: { color: color.text, fontSize: 17, fontWeight: '600', lineHeight: 24 },
@@ -202,10 +212,36 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeI
     },
     composerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     composerHint: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
-    writeToggle: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 },
+    // An outline even when inactive. This is a real switch between read-only
+    // and write access, but unstyled text beside a label read as a status
+    // rather than something you can press.
+    writeToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      borderRadius: 14,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: color.line,
+    },
     writeToggleText: { fontSize: 12, fontWeight: '700' },
-    composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-    input: { color: color.text, fontSize: 15, flex: 1, minHeight: 39, maxHeight: 96, paddingHorizontal: 4, paddingVertical: 8 },
+    // The field needs to look like a field. The input sat directly on the
+    // screen background with no edge, so the only thing suggesting you could
+    // type was the placeholder text.
+    composerRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 8,
+      backgroundColor: color.panel,
+      borderWidth: 1,
+      borderColor: color.line,
+      borderRadius: 22,
+      paddingLeft: 14,
+      paddingRight: 5,
+      paddingVertical: 5,
+    },
+    input: { color: color.text, fontSize: 15, flex: 1, minHeight: 39, maxHeight: 96, paddingVertical: 8 },
     send: {
       height: 39,
       width: 39,
