@@ -14,7 +14,13 @@ export function DemoSettings({
   project: ProjectSummary;
   capability: Capability;
 }) {
-  const { palette: color, draftDarkness, appliedDarkness, setDraftDarkness, applyAppearance } = useTheme();
+  const {
+    palette: color,
+    draftDarkness,
+    appliedDarkness,
+    setDraftDarkness,
+    applyAppearance,
+  } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
   return (
     <View style={styles.page}>
@@ -51,7 +57,13 @@ export function DemoSettings({
         </Section>
         <Section title="Appearance" styles={styles}>
           <Text style={styles.sectionCopy}>Drag to choose how Axune looks on this phone.</Text>
-          <ThemeSlider darkness={draftDarkness} setDarkness={setDraftDarkness} appliedDarkness={appliedDarkness} onApply={applyAppearance} styles={styles} />
+          <ThemeSlider
+            darkness={draftDarkness}
+            setDarkness={setDraftDarkness}
+            appliedDarkness={appliedDarkness}
+            onApply={applyAppearance}
+            styles={styles}
+          />
         </Section>
         <Section title="Connection actions" styles={styles}>
           <Action
@@ -79,13 +91,35 @@ export function DemoSettings({
     </View>
   );
 }
-function ThemeSlider({ darkness, setDarkness, appliedDarkness, onApply, styles }: { darkness: number; setDarkness: (value: number) => void; appliedDarkness: number; onApply: () => void; styles: ReturnType<typeof makeStyles> }) {
+function ThemeSlider({
+  darkness,
+  setDarkness,
+  appliedDarkness,
+  onApply,
+  styles,
+}: {
+  darkness: number;
+  setDarkness: (value: number) => void;
+  appliedDarkness: number;
+  onApply: () => void;
+  styles: ReturnType<typeof makeStyles>;
+}) {
   const { palette: color } = useTheme();
   const [width, setWidth] = useState(1);
   const update = (x: number) => setDarkness(Math.max(0, Math.min(1, x / width)));
   return (
     <View style={styles.sliderWrap}>
-      <View style={styles.swatchRow}><View style={[styles.swatch, { backgroundColor: previewColor(darkness) }]} /><View><Text style={styles.swatchTitle}>{Math.round(darkness * 100)}% dark</Text><Text style={styles.swatchDetail}>{Math.abs(appliedDarkness - darkness) < 0.01 ? 'Applied to demo' : 'Preview only until you apply'}</Text></View></View>
+      <View style={styles.swatchRow}>
+        <View style={[styles.swatch, { backgroundColor: previewColor(darkness) }]} />
+        <View>
+          <Text style={styles.swatchTitle}>{Math.round(darkness * 100)}% dark</Text>
+          <Text style={styles.swatchDetail}>
+            {Math.abs(appliedDarkness - darkness) < 0.01
+              ? 'Applied to demo'
+              : 'Preview only until you apply'}
+          </Text>
+        </View>
+      </View>
       <View
         onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
         onStartShouldSetResponder={() => true}
@@ -106,13 +140,20 @@ function ThemeSlider({ darkness, setDarkness, appliedDarkness, onApply, styles }
         />
       </View>
       <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>Paper</Text><Text style={styles.sliderLabel}>Graphite</Text><Text style={styles.sliderLabel}>Black</Text>
+        <Text style={styles.sliderLabel}>Paper</Text>
+        <Text style={styles.sliderLabel}>Graphite</Text>
+        <Text style={styles.sliderLabel}>Black</Text>
       </View>
-      <Pressable onPress={onApply} style={[styles.apply, { backgroundColor: color.text }]}><Text style={[styles.applyText, { color: color.panel }]}>Apply appearance</Text></Pressable>
+      <Pressable onPress={onApply} style={[styles.apply, { backgroundColor: color.text }]}>
+        <Text style={[styles.applyText, { color: color.panel }]}>Apply appearance</Text>
+      </Pressable>
     </View>
   );
 }
-function previewColor(darkness: number) { const value = Math.round(247 + (17 - 247) * darkness); return `rgb(${value}, ${value}, ${value})`; }
+function previewColor(darkness: number) {
+  const value = Math.round(247 + (17 - 247) * darkness);
+  return `rgb(${value}, ${value}, ${value})`;
+}
 function Section({
   title,
   children,
@@ -214,7 +255,13 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     sectionCopy: { color: color.textMuted, fontSize: 13, padding: 15, paddingBottom: 0 },
     sliderWrap: { padding: 18, paddingTop: 20, gap: 10 },
     swatchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
-    swatch: { height: 34, width: 34, borderRadius: 11, borderWidth: 1, borderColor: color.lineStrong },
+    swatch: {
+      height: 34,
+      width: 34,
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor: color.lineStrong,
+    },
     swatchTitle: { color: color.text, fontSize: 13, fontWeight: '700' },
     swatchDetail: { color: color.textMuted, fontSize: 12, marginTop: 2 },
     sliderTrack: {
@@ -235,7 +282,13 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     },
     sliderLabels: { flexDirection: 'row', justifyContent: 'space-between' },
     sliderLabel: { fontSize: 12, fontWeight: '700' },
-    apply: { height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+    apply: {
+      height: 42,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 4,
+    },
     applyText: { fontSize: 13, fontWeight: '700' },
     action: {
       padding: 15,

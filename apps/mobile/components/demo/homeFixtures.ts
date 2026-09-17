@@ -3,6 +3,7 @@ import type {
   AgentBranch,
   AgentStatus,
   Capability,
+  ChangeSet,
   MachineSummary,
   GitSnapshot,
   ProjectSummary,
@@ -61,6 +62,43 @@ export const demoLiveRun: LiveRun = {
   write: false,
   changes: null,
   decision: null,
+};
+
+export const demoChangeSet: ChangeSet = {
+  branch: 'axune/claude-code/navigation-review',
+  commit: 'a83df19',
+  files: [
+    {
+      path: 'apps/mobile/app/(tabs)/_layout.tsx',
+      insertions: 18,
+      deletions: 5,
+      status: 'modified',
+    },
+    {
+      path: 'apps/mobile/components/SessionHeader.tsx',
+      insertions: 46,
+      deletions: 0,
+      status: 'created',
+    },
+  ],
+  insertions: 64,
+  deletions: 5,
+  patch:
+    "@@ -18,7 +18,20 @@\n-  title: 'Sessions',\n+  title: 'Your sessions',\n+  headerRight: () => <SessionHeader />,\n@@\n+export function SessionHeader() {\n+  return <Text>Continue where you left off</Text>;\n+}",
+  behindBy: 1,
+};
+
+export const demoReviewRun: LiveRun = {
+  ...demoLiveRun,
+  runId: 'demo-review-run',
+  prompt: 'Improve the session header hierarchy.',
+  text: 'I updated the session header and prepared the branch for review.',
+  status: 'finished',
+  outcome: 'completed',
+  write: true,
+  changes: demoChangeSet,
+  startedAt: now - 1000 * 60 * 18,
+  lastEventAt: now - 1000 * 60 * 3,
 };
 
 export const demoHistory: RunSummary[] = [
