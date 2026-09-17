@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { Thread } from '@/lib/WorkspaceContext';
 import { useTheme } from '@/lib/ThemeContext';
+import { DemoTabBar } from './DemoTabBar';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -65,6 +66,7 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
           ))}
         </View>
       </ScrollView>
+      <DemoTabBar />
     </View>
   );
 }
