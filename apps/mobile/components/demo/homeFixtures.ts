@@ -3,6 +3,7 @@ import type {
   AgentBranch,
   AgentStatus,
   Capability,
+  MachineSummary,
   GitSnapshot,
   ProjectSummary,
 } from '@axune/protocol';
@@ -38,6 +39,12 @@ export const demoAgents: AgentStatus[] = [
 ];
 
 export const demoCapability: Capability = 'read-write';
+
+export const demoMachine: MachineSummary = {
+  name: 'CEDRIC-DESKTOP',
+  platform: 'Windows 11',
+  connection: 'local',
+};
 
 export const demoLiveRun: LiveRun = {
   runId: 'demo-live-run',
