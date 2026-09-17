@@ -44,15 +44,17 @@ function blendPalette(amount: number): Palette {
   return {
     ...mixed,
     // Neutrals are designed as a scale, not mechanically blended brand tokens.
-    bg: rgb([250, 251, 252], [11, 14, 18], amount),
-    screen: rgb([255, 255, 255], [16, 20, 25], amount),
-    panel: rgb([255, 255, 255], [21, 27, 34], amount),
-    panelAlt: rgb([240, 243, 246], [30, 38, 47], amount),
-    line: darkForeground ? 'rgba(20, 26, 33, 0.12)' : 'rgba(255, 255, 255, 0.10)',
-    lineStrong: darkForeground ? 'rgba(20, 26, 33, 0.24)' : 'rgba(255, 255, 255, 0.20)',
-    text: darkForeground ? 'rgb(20, 26, 33)' : 'rgb(244, 247, 250)',
-    textMuted: darkForeground ? 'rgb(76, 87, 99)' : 'rgb(177, 189, 202)',
-    textSoft: darkForeground ? 'rgb(116, 128, 141)' : 'rgb(121, 137, 153)',
+    bg: rgb([250, 251, 252], [10, 13, 17], amount),
+    screen: rgb([255, 255, 255], [15, 19, 24], amount),
+    // In darkness, surfaces rise in luminance so hierarchy remains visible.
+    panel: rgb([255, 255, 255], [24, 30, 38], amount),
+    panelAlt: rgb([240, 243, 246], [34, 42, 52], amount),
+    line: darkForeground ? 'rgba(15, 23, 32, 0.16)' : 'rgba(255, 255, 255, 0.12)',
+    lineStrong: darkForeground ? 'rgba(15, 23, 32, 0.32)' : 'rgba(255, 255, 255, 0.24)',
+    text: darkForeground ? 'rgb(14, 20, 27)' : 'rgb(246, 248, 250)',
+    // Secondary text is deliberately stronger than decorative text, including at grey midpoints.
+    textMuted: darkForeground ? 'rgb(53, 67, 82)' : 'rgb(195, 205, 216)',
+    textSoft: darkForeground ? 'rgb(85, 100, 116)' : 'rgb(151, 165, 180)',
   };
 }
 
