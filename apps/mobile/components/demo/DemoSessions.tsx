@@ -51,7 +51,7 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
           <View style={styles.liveFoot}>
             <View style={[styles.dot, { backgroundColor: color.claudeStrong }]} />
             <Text style={styles.liveDetail}>Searching session screens</Text>
-            <Ionicons name="arrow-forward" size={18} color={color.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={color.textMuted} />
           </View>
         </Pressable>}
         {state !== 'empty' && <Pressable
@@ -65,7 +65,7 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
             <Text style={styles.reviewTitle}>Changes ready to review</Text>
             <Text style={styles.reviewDetail}>2 files · +64 · −5</Text>
           </View>
-          <Ionicons name="arrow-forward" size={18} color={color.textMuted} />
+          <Ionicons name="chevron-forward" size={18} color={color.textMuted} />
         </Pressable>}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Archived conversations</Text>
@@ -116,10 +116,12 @@ function SessionRow({
         {run.text}
       </Text>
       <View style={styles.rowFoot}>
-        <Text style={styles.rowMeta}>{run.status === 'finished' ? 'Completed' : run.status}</Text>
-        <Text style={styles.rowMeta}>{relativeTime(thread.startedAt)}</Text>
         <Text style={styles.rowMeta}>
-          {thread.runs.length} prompt{thread.runs.length === 1 ? '' : 's'}
+          {[
+            run.status === 'finished' ? 'Completed' : run.status,
+            relativeTime(thread.startedAt),
+            thread.runs.length + (thread.runs.length === 1 ? ' prompt' : ' prompts'),
+          ].join(' · ')}
         </Text>
       </View>
     </Pressable>

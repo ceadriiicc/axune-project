@@ -54,7 +54,12 @@ export function DemoPairing({ payload }: { payload: PairingPayload }) {
               phone with one machine.
             </Text>
             <View style={styles.scan}>
-              <View style={styles.corner} />
+              {/* Four brackets, not one. A viewfinder with a single corner reads
+                  as an unfinished graphic rather than a frame to aim with. */}
+              <View style={[styles.corner, styles.cornerTopLeft]} />
+              <View style={[styles.corner, styles.cornerTopRight]} />
+              <View style={[styles.corner, styles.cornerBottomLeft]} />
+              <View style={[styles.corner, styles.cornerBottomRight]} />
               <Ionicons name="qr-code-outline" size={70} color={color.text} />
               <Text style={styles.scanText}>Demo pairing code detected</Text>
             </View>
@@ -154,7 +159,11 @@ const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette'], insets: E
     },
     back: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
     topTitle: { color: color.text, fontSize: 15, fontWeight: '700' },
-    body: { flex: 1, padding: 28, justifyContent: 'center', gap: 17 },
+    // Top-aligned rather than centred. justifyContent: 'center' pushed this
+    // short block into the middle of a tall screen, leaving roughly a third of
+    // the phone empty above it and a matching void below - which read as a
+    // layout accident rather than composition.
+    body: { flex: 1, padding: 28, paddingTop: 34, gap: 17 },
     eyebrow: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1.3 },
     title: {
       color: color.text,
@@ -176,13 +185,25 @@ const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette'], insets: E
     },
     corner: {
       position: 'absolute',
-      top: 17,
-      left: 17,
       width: 26,
       height: 26,
-      borderTopWidth: 3,
-      borderLeftWidth: 3,
       borderColor: color.claudeStrong,
+    },
+    cornerTopLeft: { top: 17, left: 17, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 8 },
+    cornerTopRight: { top: 17, right: 17, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 8 },
+    cornerBottomLeft: {
+      bottom: 17,
+      left: 17,
+      borderBottomWidth: 3,
+      borderLeftWidth: 3,
+      borderBottomLeftRadius: 8,
+    },
+    cornerBottomRight: {
+      bottom: 17,
+      right: 17,
+      borderBottomWidth: 3,
+      borderRightWidth: 3,
+      borderBottomRightRadius: 8,
     },
     scanText: { color: color.textMuted, fontSize: 13, fontWeight: '600' },
     primary: {
