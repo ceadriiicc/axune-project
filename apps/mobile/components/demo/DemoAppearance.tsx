@@ -39,7 +39,25 @@ export function useDemoTheme(): DemoAppearance {
 }
 
 function blendPalette(amount: number): Palette {
-  return Object.fromEntries(Object.keys(palettes.light).map((key) => [key, blend(palettes.light[key as keyof Palette], palettes.dark[key as keyof Palette], amount)])) as Palette;
+  const mixed = Object.fromEntries(Object.keys(palettes.light).map((key) => [key, blend(palettes.light[key as keyof Palette], palettes.dark[key as keyof Palette], amount)])) as Palette;
+  const darkForeground = amount < 0.62;
+  return {
+    ...mixed,
+    // Neutrals are designed as a scale, not mechanically blended brand tokens.
+    bg: rgb([250, 251, 252], [11, 14, 18], amount),
+    screen: rgb([255, 255, 255], [16, 20, 25], amount),
+    panel: rgb([255, 255, 255], [21, 27, 34], amount),
+    panelAlt: rgb([240, 243, 246], [30, 38, 47], amount),
+    line: darkForeground ? 'rgba(20, 26, 33, 0.12)' : 'rgba(255, 255, 255, 0.10)',
+    lineStrong: darkForeground ? 'rgba(20, 26, 33, 0.24)' : 'rgba(255, 255, 255, 0.20)',
+    text: darkForeground ? 'rgb(20, 26, 33)' : 'rgb(244, 247, 250)',
+    textMuted: darkForeground ? 'rgb(76, 87, 99)' : 'rgb(177, 189, 202)',
+    textSoft: darkForeground ? 'rgb(116, 128, 141)' : 'rgb(121, 137, 153)',
+  };
+}
+
+function rgb(light: [number, number, number], dark: [number, number, number], amount: number): string {
+  return `rgb(${light.map((channel, index) => Math.round(channel + (dark[index]! - channel) * amount)).join(', ')})`;
 }
 
 function blend(light: string, dark: string, amount: number): string {
