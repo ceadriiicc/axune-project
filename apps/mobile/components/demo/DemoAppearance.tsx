@@ -1,7 +1,7 @@
 import { palettes, type Palette } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
-import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import React, { createContext, useContext, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 interface DemoAppearance {
   palette: Palette;
@@ -19,7 +19,6 @@ export function DemoAppearanceProvider({ children }: { children: React.ReactNode
   const initial = scheme === 'dark' ? 1 : 0;
   const [draftDarkness, setDraftDarknessState] = useState(initial);
   const [appliedDarkness, setAppliedDarkness] = useState(initial);
-  const veil = useRef(new Animated.Value(0)).current;
   const palette = useMemo(() => blendPalette(appliedDarkness), [appliedDarkness]);
   const value = useMemo<DemoAppearance>(() => ({
     palette,
@@ -27,12 +26,10 @@ export function DemoAppearanceProvider({ children }: { children: React.ReactNode
     appliedDarkness,
     setDraftDarkness: (next) => setDraftDarknessState(Math.max(0, Math.min(1, next))),
     applyAppearance: () => {
-      veil.setValue(1);
       setAppliedDarkness(draftDarkness);
-      Animated.timing(veil, { toValue: 0, duration: 260, useNativeDriver: true }).start();
     },
-  }), [appliedDarkness, draftDarkness, palette, veil]);
-  return <Context.Provider value={value}><View style={styles.fill}>{children}</View><Animated.View pointerEvents="none" style={[styles.veil, { backgroundColor: palette.bg, opacity: veil }]} /></Context.Provider>;
+  }), [appliedDarkness, draftDarkness, palette]);
+  return <Context.Provider value={value}><View style={styles.fill}>{children}</View></Context.Provider>;
 }
 
 export function useDemoTheme(): DemoAppearance {
@@ -58,4 +55,4 @@ function parseColor(value: string): [number, number, number, number] {
   return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0, numbers[3] ?? 1];
 }
 
-const styles = StyleSheet.create({ fill: { flex: 1 }, veil: StyleSheet.absoluteFill });
+const styles = StyleSheet.create({ fill: { flex: 1 } });
