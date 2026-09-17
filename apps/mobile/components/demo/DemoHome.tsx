@@ -339,7 +339,7 @@ function NowWidget({
           }
           style={styles.secondaryAction}
         >
-          <Text style={styles.secondaryLabel}>Stop run</Text>
+          <Text style={[styles.secondaryLabel, { color: color.danger }]}>Stop run</Text>
         </Pressable>}
       </View>
     </View>
@@ -589,16 +589,25 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeI
     pulse: { width: 7, height: 7, borderRadius: 4 },
     liveText: { color: color.textMuted, fontSize: 13 },
     actionRow: { flexDirection: 'row', gap: 9, marginTop: 14 },
-    primaryAction: { borderRadius: 12, paddingHorizontal: 15, paddingVertical: 13 },
+    primaryAction: {
+      borderRadius: 12,
+      paddingHorizontal: 15,
+      height: 47,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flex: 1,
+    },
     primaryLabel: { fontSize: 13, fontWeight: '700' },
     secondaryAction: {
       borderRadius: 12,
-      paddingHorizontal: 15,
-      paddingVertical: 12,
+      paddingHorizontal: 20,
+      height: 47,
+      alignItems: 'center',
+      justifyContent: 'center',
       borderWidth: 1,
       borderColor: color.lineStrong,
     },
-    secondaryLabel: { color: color.textMuted, fontSize: 13, fontWeight: '700' },
+    secondaryLabel: { fontSize: 13, fontWeight: '700' },
     health: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
     healthNumber: {
       color: color.text,
