@@ -55,6 +55,14 @@ function blendPalette(amount: number): Palette {
     // Secondary text is deliberately stronger than decorative text, including at grey midpoints.
     textMuted: darkForeground ? 'rgb(53, 67, 82)' : 'rgb(195, 205, 216)',
     textSoft: darkForeground ? 'rgb(85, 100, 116)' : 'rgb(151, 165, 180)',
+    // Claude is deliberately orange, not beige: identity needs to survive the cream surface.
+    claude: rgb([211, 103, 25], [247, 157, 76], amount),
+    claudeStrong: rgb([181, 75, 12], [224, 117, 39], amount),
+    claudeText: rgb([144, 57, 8], [255, 194, 137], amount),
+    claudeBubble: rgb([255, 232, 205], [83, 43, 18], amount),
+    claudeBubbleText: rgb([79, 35, 10], [255, 235, 216], amount),
+    claudeIconBg: rgb([255, 215, 169], [103, 52, 18], amount),
+    claudeIconText: rgb([119, 49, 9], [255, 213, 171], amount),
   };
 }
 
