@@ -10,13 +10,15 @@
  *
  * Uses a throwaway ledger file and synthetic events - no agent, no usage.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { AgentEvent } from '@axune/protocol';
 
+import { ActivityLog } from './core/ActivityLog';
 import { EgressLedger } from './core/EgressLedger';
+import { SessionStore } from './core/SessionStore';
 
 const scratch = mkdtempSync(join(tmpdir(), 'axune-privacy-'));
 const ledgerFile = join(scratch, 'egress.json');
@@ -129,6 +131,91 @@ check('a path outside the project is kept absolute rather than mangled', () => {
   return path.includes('Users')
     ? `kept as ${path} - a read outside the project stays visible`
     : `FAIL: rewritten to ${path}`;
+});
+
+// ---- retention: bounded by age, not only by count ----------------------
+
+check('an old activity entry expires even when there is room for it', () => {
+  const file = join(scratch, 'activity-age.json');
+  // Well under the 300-entry cap, so only age can remove these.
+  const old = { id: 'a', at: Date.now() - 60 * 24 * 60 * 60 * 1000, kind: 'git.commit', summary: 'from two months ago' };
+  const fresh = { id: 'b', at: Date.now(), kind: 'git.commit', summary: 'today' };
+  writeFileSync(file, JSON.stringify([old, fresh]));
+
+  const log = new ActivityLog(file, 300);
+  const kept = log.recent(40);
+  if (kept.length !== 1) return `FAIL: ${kept.length} entries survived, expected 1`;
+  if (kept[0]!.summary !== 'today') return `FAIL: kept the wrong one (${kept[0]!.summary})`;
+  return 'a two-month-old entry was dropped although only two existed';
+});
+
+check('a recent activity entry is not expired', () => {
+  const file = join(scratch, 'activity-fresh.json');
+  writeFileSync(file, JSON.stringify([{ id: 'a', at: Date.now() - 1000, kind: 'run.started', summary: 'a moment ago' }]));
+  const kept = new ActivityLog(file, 300).recent(40);
+  return kept.length === 1 ? 'kept, as it should be' : `FAIL: dropped a fresh entry (${kept.length} left)`;
+});
+
+check('an old egress record expires', () => {
+  const file = join(scratch, 'egress-age.json');
+  const stale = { runId: 'r', agentId: 'claude-code', at: 0, finishedAt: Date.now() - 60 * 24 * 60 * 60 * 1000, reads: 1, totalBytes: 10, files: [{ path: 'a.ts', bytes: 10 }] };
+  const fresh = { runId: 'r2', agentId: 'claude-code', at: 0, finishedAt: Date.now(), reads: 1, totalBytes: 10, files: [{ path: 'b.ts', bytes: 10 }] };
+  writeFileSync(file, JSON.stringify([stale, fresh]));
+  const entries = new EgressLedger(PROJECT, file).recent(20);
+  if (entries.length !== 1) return `FAIL: ${entries.length} survived, expected 1`;
+  return 'a record of what was sent two months ago is gone';
+});
+
+check('a provider session written by an older version survives the upgrade', () => {
+  const file = join(scratch, 'store-migrate.json');
+  // The old shape: a bare id with no timestamp.
+  writeFileSync(file, JSON.stringify({ devices: {}, providerSessions: { 'sess:claude-code': 'provider-abc' } }));
+  const store = new SessionStore(file);
+  const id = store.providerSession('sess', 'claude-code');
+  if (id !== 'provider-abc') return `FAIL: lost it on migration, got ${String(id)}`;
+  return 'migrated rather than discarded - an upgrade must not delete resumable conversations';
+});
+
+check('an old provider session expires', () => {
+  const file = join(scratch, 'store-old-session.json');
+  const longAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
+  writeFileSync(file, JSON.stringify({ devices: {}, providerSessions: { 'sess:claude-code': { id: 'provider-abc', at: longAgo } } }));
+  const store = new SessionStore(file);
+  return store.providerSession('sess', 'claude-code') === undefined
+    ? 'a two-month-old session id is forgotten'
+    : 'FAIL: kept indefinitely';
+});
+
+// ---- the wipe -----------------------------------------------------------
+
+check('forgetting everything removes it all, and says what went', () => {
+  const file = join(scratch, 'store-wipe.json');
+  const store = new SessionStore(file);
+  store.trustDevice('token-1', 'iPhone');
+  store.trustDevice('token-2', 'iPad');
+  store.rememberProviderSession('sess', 'claude-code', 'provider-abc');
+
+  const removed = store.forgetEverything();
+  if (removed.devices !== 2) return `FAIL: reported ${removed.devices} devices, expected 2`;
+  if (removed.providerSessions !== 1) return `FAIL: reported ${removed.providerSessions} sessions`;
+  if (store.trustedTokens().length !== 0) return 'FAIL: a device survived the wipe';
+  if (store.providerSession('sess', 'claude-code')) return 'FAIL: a session survived the wipe';
+
+  // And it must stay gone across a restart, not merely be cleared in memory.
+  const reopened = new SessionStore(file);
+  if (reopened.trustedTokens().length !== 0) return 'FAIL: devices came back after a restart';
+  return `reported ${removed.devices} devices and ${removed.providerSessions} conversation, and none returned`;
+});
+
+check('a wiped activity log reports how much it removed', () => {
+  const file = join(scratch, 'activity-wipe.json');
+  const log = new ActivityLog(file, 300);
+  log.record('run.started', 'one');
+  log.record('run.completed', 'two');
+  const removed = log.clear();
+  if (removed !== 2) return `FAIL: reported ${removed}, expected 2`;
+  if (new ActivityLog(file, 300).recent(40).length !== 0) return 'FAIL: entries survived a restart';
+  return 'reported 2 removed, and none came back';
 });
 
 rmSync(scratch, { recursive: true, force: true });

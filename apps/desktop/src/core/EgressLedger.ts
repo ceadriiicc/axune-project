@@ -32,8 +32,23 @@ export class EgressLedger {
     private readonly file = defaultPath(),
     /** Runs kept on disk. Bounded like everything else here. */
     private readonly max = 200,
+    /**
+     * And bounded by age, not only by count. A record of which files were sent
+     * to a provider is useful for weeks and a liability for ever.
+     */
+    private readonly maxAgeMs = 30 * 24 * 60 * 60 * 1000,
   ) {
     this.load();
+    this.prune();
+  }
+
+  private prune(): void {
+    const cutoff = Date.now() - this.maxAgeMs;
+    const kept = this.entries.filter((entry) => entry.finishedAt >= cutoff);
+    if (kept.length !== this.entries.length) this.entries = kept;
+    if (this.entries.length > this.max) {
+      this.entries.splice(0, this.entries.length - this.max);
+    }
   }
 
   /**
@@ -96,9 +111,7 @@ export class EgressLedger {
       totalBytes,
       files,
     });
-    if (this.entries.length > this.max) {
-      this.entries.splice(0, this.entries.length - this.max);
-    }
+    this.prune();
     this.save();
 
     const count = files.length;
