@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { Thread } from '@/lib/WorkspaceContext';
 import { useDemoTheme as useTheme } from './DemoAppearance';
+import { useDemoScenario } from './DemoScenario';
 import { DemoTabBar } from './DemoTabBar';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
@@ -8,6 +9,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export function DemoSessions({ threads }: { threads: Thread[] }) {
   const { palette: color } = useTheme();
+  const { state } = useDemoScenario();
   const router = useRouter();
   const styles = useMemo(() => makeStyles(color), [color]);
   return (
@@ -27,7 +29,7 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
             <Ionicons name="add" size={20} color={color.panel} />
           </Pressable>
         </View>
-        <Pressable
+        {state !== 'empty' && state !== 'offline' && <Pressable
           onPress={() =>
             router.push({ pathname: '/demo/session/[id]' as never, params: { id: 'live' } })
           }
@@ -48,8 +50,8 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
             <Text style={styles.liveDetail}>Searching session screens</Text>
             <Ionicons name="arrow-forward" size={18} color={color.textMuted} />
           </View>
-        </Pressable>
-        <Pressable
+        </Pressable>}
+        {state !== 'empty' && <Pressable
           onPress={() => router.push('/demo/review')}
           style={({ pressed }) => [styles.review, pressed && styles.pressed]}
         >
@@ -61,12 +63,16 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
             <Text style={styles.reviewDetail}>2 files · +64 · −5</Text>
           </View>
           <Ionicons name="arrow-forward" size={18} color={color.textMuted} />
-        </Pressable>
+        </Pressable>}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Archived conversations</Text>
           <Text style={styles.sectionNote}>They stay available to resume.</Text>
         </View>
-        <View style={styles.list}>
+        {state === 'empty' ? <View style={styles.emptyState}>
+          <Ionicons name="chatbubble-ellipses-outline" size={27} color={color.textSoft} />
+          <Text style={styles.emptyTitle}>No sessions yet</Text>
+          <Text style={styles.emptyCopy}>Ask Claude to investigate, explain, or make a change from your phone.</Text>
+        </View> : <View style={styles.list}>
           {threads.map((thread) => (
             <SessionRow
               key={thread.id}
@@ -77,7 +83,7 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
               styles={styles}
             />
           ))}
-        </View>
+        </View>}
       </ScrollView>
       <DemoTabBar />
     </View>
@@ -191,4 +197,7 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     rowFoot: { flexDirection: 'row', gap: 10, marginTop: 2 },
     rowMeta: { color: color.textSoft, fontSize: 12 },
     pressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
+    emptyState: { alignItems: 'center', paddingHorizontal: 35, paddingVertical: 46, gap: 9 },
+    emptyTitle: { color: color.text, fontSize: 18, fontWeight: '700' },
+    emptyCopy: { color: color.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
   });

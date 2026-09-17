@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ActivityEvent, AgentBranch, AgentStatus, ProjectSummary } from '@axune/protocol';
 import type { LiveRun, RunSummary } from '@/lib/WorkspaceContext';
 import { useDemoTheme as useTheme } from './DemoAppearance';
+import { useDemoScenario } from './DemoScenario';
 import { DemoTabBar } from './DemoTabBar';
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -29,6 +30,7 @@ const titles: Record<WidgetId, string> = {
 
 export function DemoHome({ project, agents, live, history, activity, branches }: Props) {
   const { palette: color } = useTheme();
+  const { state } = useDemoScenario();
   const [widgets, setWidgets] = useState<WidgetId[]>(['next', 'now', 'health', 'recent']);
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -70,7 +72,7 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
           </Pressable>
         </View>
 
-        <Pressable style={({ pressed }) => [styles.workspace, pressed && styles.pressed]}>
+        <View style={styles.workspace}>
           <View style={[styles.workspaceMark, { backgroundColor: color.claudeIconBg }]}>
             <Ionicons name="laptop-outline" size={20} color={color.claudeIconText} />
           </View>
@@ -79,10 +81,27 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
             <Text style={styles.workspaceMeta}>{project.branch}</Text>
           </View>
           <View style={styles.connected}>
-            <View style={[styles.statusDot, { backgroundColor: color.ok }]} />
-            <Text style={styles.connectedText}>Connected</Text>
+            <View
+              style={[
+                styles.statusDot,
+                {
+                  backgroundColor:
+                    state === 'offline'
+                      ? color.danger
+                      : state === 'reconnecting'
+                        ? color.claudeStrong
+                        : color.ok,
+                },
+              ]}
+            />
+            <Text style={styles.connectedText}>
+              {state === 'offline' ? 'Offline' : state === 'reconnecting' ? 'Reconnecting' : 'Connected'}
+            </Text>
           </View>
-        </Pressable>
+        </View>
+
+        {state === 'reconnecting' && <ConnectionNotice styles={styles} color={color} reconnecting />}
+        {state === 'offline' && <ConnectionNotice styles={styles} color={color} />}
 
         {editing && (
           <View style={styles.editNotice}>
@@ -93,7 +112,20 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
           </View>
         )}
 
-        {widgets.map((id) => (
+        {state === 'empty' ? (
+          <View style={styles.emptyWorkspace}>
+            <View style={[styles.emptyIcon, { backgroundColor: color.panelAlt }]}>
+              <Ionicons name="sparkles-outline" size={24} color={color.claudeStrong} />
+            </View>
+            <Text style={styles.emptyTitle}>A calm starting point.</Text>
+            <Text style={styles.emptyCopy}>
+              There is no activity to show yet. Start a session when you have something to investigate.
+            </Text>
+            <Pressable style={[styles.emptyAction, { backgroundColor: color.text }]}>
+              <Text style={[styles.emptyActionText, { color: color.panel }]}>Start a session</Text>
+            </Pressable>
+          </View>
+        ) : widgets.map((id) => (
           <WidgetFrame
             key={id}
             title={titles[id]}
@@ -157,6 +189,33 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
         </View>
       </Modal>
       {!pickerOpen && <DemoTabBar />}
+    </View>
+  );
+}
+
+function ConnectionNotice({
+  styles,
+  color,
+  reconnecting = false,
+}: {
+  styles: ReturnType<typeof makeStyles>;
+  color: ReturnType<typeof useTheme>['palette'];
+  reconnecting?: boolean;
+}) {
+  const accent = reconnecting ? color.claudeStrong : color.danger;
+  return (
+    <View style={[styles.connectionNotice, { borderColor: accent }]}>
+      <Ionicons name={reconnecting ? 'sync-outline' : 'cloud-offline-outline'} size={19} color={accent} />
+      <View style={styles.flex}>
+        <Text style={styles.connectionTitle}>
+          {reconnecting ? 'Reconnecting to your desktop' : 'Your desktop is unavailable'}
+        </Text>
+        <Text style={styles.connectionCopy}>
+          {reconnecting
+            ? 'Runs are safe. Axune will resume the activity stream.'
+            : 'Reconnect to see live work and start a session.'}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -430,6 +489,15 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     connected: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     statusDot: { width: 7, height: 7, borderRadius: 4 },
     connectedText: { color: color.textMuted, fontSize: 12 },
+    connectionNotice: { flexDirection: 'row', gap: 10, borderWidth: 1, borderRadius: 15, padding: 13 },
+    connectionTitle: { color: color.text, fontSize: 14, fontWeight: '700' },
+    connectionCopy: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+    emptyWorkspace: { alignItems: 'center', paddingHorizontal: 26, paddingVertical: 54, gap: 12 },
+    emptyIcon: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+    emptyTitle: { color: color.text, fontSize: 20, fontWeight: '700', marginTop: 4 },
+    emptyCopy: { color: color.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+    emptyAction: { borderRadius: 13, paddingHorizontal: 17, paddingVertical: 12, marginTop: 6 },
+    emptyActionText: { fontSize: 13, fontWeight: '700' },
     editNotice: {
       flexDirection: 'row',
       gap: 8,

@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { DemoTabBar } from './DemoTabBar';
+import { type DemoState, useDemoScenario } from './DemoScenario';
 
 export function DemoSettings({
   machine,
@@ -23,6 +24,7 @@ export function DemoSettings({
     applyAppearance,
   } = useTheme();
   const router = useRouter();
+  const { state, setState } = useDemoScenario();
   const styles = useMemo(() => makeStyles(color), [color]);
   return (
     <View style={styles.page}>
@@ -82,6 +84,34 @@ export function DemoSettings({
             danger
             styles={styles}
           />
+        </Section>
+        <Section title="Demo states" styles={styles}>
+          <Text style={styles.sectionCopy}>Explore the moments a real phone needs to handle.</Text>
+          <View style={styles.stateChoices}>
+            {(
+              [
+                ['normal', 'Connected'],
+                ['reconnecting', 'Reconnecting'],
+                ['offline', 'Offline'],
+                ['empty', 'Empty'],
+              ] as [DemoState, string][]
+            ).map(([value, label]) => (
+              <Pressable
+                key={value}
+                onPress={() => setState(value)}
+                style={[styles.stateChoice, state === value && { backgroundColor: color.text }]}
+              >
+                <Text
+                  style={[
+                    styles.stateChoiceLabel,
+                    { color: state === value ? color.panel : color.textMuted },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </Section>
         <Section title="Privacy" styles={styles}>
           <Text style={styles.privacy}>
@@ -311,5 +341,14 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     actionLabel: { color: color.text, fontSize: 14, fontWeight: '700' },
     actionDetail: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
     privacy: { color: color.textMuted, padding: 15, fontSize: 13, lineHeight: 19 },
+    stateChoices: { padding: 14, paddingTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    stateChoice: {
+      borderWidth: 1,
+      borderColor: color.lineStrong,
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    stateChoiceLabel: { fontSize: 12, fontWeight: '700' },
     pressed: { opacity: 0.68, transform: [{ scale: 0.99 }] },
   });
