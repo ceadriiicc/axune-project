@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Capability, MachineSummary, ProjectSummary } from '@axune/protocol';
 import { useTheme } from '@/lib/ThemeContext';
 import type { ThemeMode } from '@/lib/themeStore';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { DemoTabBar } from './DemoTabBar';
 
@@ -51,25 +51,8 @@ export function DemoSettings({
           </View>
         </Section>
         <Section title="Appearance" styles={styles}>
-          <Text style={styles.sectionCopy}>Choose how Axune looks on this phone.</Text>
-          <View style={styles.choiceRow}>
-            {(['system', 'light', 'dark'] as ThemeMode[]).map((choice) => (
-              <Pressable
-                key={choice}
-                onPress={() => setMode(choice)}
-                style={[styles.choice, mode === choice && { backgroundColor: color.text }]}
-              >
-                <Text
-                  style={[
-                    styles.choiceText,
-                    { color: mode === choice ? color.panel : color.textMuted },
-                  ]}
-                >
-                  {choice[0]!.toUpperCase() + choice.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text style={styles.sectionCopy}>Drag to choose how Axune looks on this phone.</Text>
+          <ThemeSlider mode={mode} setMode={setMode} styles={styles} />
         </Section>
         <Section title="Connection actions" styles={styles}>
           <Action
@@ -94,6 +77,68 @@ export function DemoSettings({
         </Section>
       </ScrollView>
       <DemoTabBar />
+    </View>
+  );
+}
+function ThemeSlider({
+  mode,
+  setMode,
+  styles,
+}: {
+  mode: ThemeMode;
+  setMode: (mode: ThemeMode) => void;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const { palette: color } = useTheme();
+  const [width, setWidth] = useState(1);
+  const modes: ThemeMode[] = ['light', 'system', 'dark'];
+  const index = modes.indexOf(mode);
+  const update = (x: number) =>
+    setMode(modes[Math.max(0, Math.min(2, Math.round((x / width) * 2)))]!);
+  return (
+    <View style={styles.sliderWrap}>
+      <View
+        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={(event) => update(event.nativeEvent.locationX)}
+        onResponderMove={(event) => update(event.nativeEvent.locationX)}
+        style={styles.sliderTrack}
+      >
+        <View
+          style={[styles.sliderFill, { width: `${index * 50}%`, backgroundColor: color.text }]}
+        />
+        {modes.map((choice, choiceIndex) => (
+          <View
+            key={choice}
+            pointerEvents="none"
+            style={[
+              styles.sliderStop,
+              {
+                left: `${choiceIndex * 50}%`,
+                backgroundColor: choiceIndex === index ? color.text : color.panel,
+              },
+            ]}
+          />
+        ))}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.sliderThumb,
+            { left: `${index * 50}%`, borderColor: color.panel, backgroundColor: color.text },
+          ]}
+        />
+      </View>
+      <View style={styles.sliderLabels}>
+        {modes.map((choice) => (
+          <Text
+            key={choice}
+            style={[styles.sliderLabel, { color: mode === choice ? color.text : color.textSoft }]}
+          >
+            {choice[0]!.toUpperCase() + choice.slice(1)}
+          </Text>
+        ))}
+      </View>
     </View>
   );
 }
@@ -196,22 +241,25 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     explanation: { flexDirection: 'row', gap: 10, padding: 14, backgroundColor: color.panelAlt },
     explanationText: { color: color.textMuted, fontSize: 13, lineHeight: 19, flex: 1 },
     sectionCopy: { color: color.textMuted, fontSize: 13, padding: 15, paddingBottom: 0 },
-    choiceRow: {
-      flexDirection: 'row',
-      margin: 14,
-      marginTop: 12,
+    sliderWrap: { padding: 18, paddingTop: 20, gap: 10 },
+    sliderTrack: {
+      height: 7,
+      borderRadius: 4,
       backgroundColor: color.panelAlt,
-      padding: 3,
-      borderRadius: 12,
-    },
-    choice: {
-      flex: 1,
-      alignItems: 'center',
       justifyContent: 'center',
-      height: 34,
-      borderRadius: 9,
     },
-    choiceText: { fontSize: 12, fontWeight: '700' },
+    sliderFill: { position: 'absolute', left: 0, height: 7, borderRadius: 4 },
+    sliderStop: { position: 'absolute', marginLeft: -3.5, height: 7, width: 7, borderRadius: 4 },
+    sliderThumb: {
+      position: 'absolute',
+      marginLeft: -12,
+      height: 24,
+      width: 24,
+      borderRadius: 12,
+      borderWidth: 3,
+    },
+    sliderLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+    sliderLabel: { fontSize: 12, fontWeight: '700' },
     action: {
       padding: 15,
       minHeight: 66,
