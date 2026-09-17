@@ -49,6 +49,19 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
             <Ionicons name="arrow-forward" size={18} color={color.textMuted} />
           </View>
         </Pressable>
+        <Pressable
+          onPress={() => router.push('/demo/review')}
+          style={({ pressed }) => [styles.review, pressed && styles.pressed]}
+        >
+          <View style={styles.reviewIcon}>
+            <Ionicons name="git-compare-outline" size={19} color={color.claudeIconText} />
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.reviewTitle}>Changes ready to review</Text>
+            <Text style={styles.reviewDetail}>2 files · +64 · −5</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={18} color={color.textMuted} />
+        </Pressable>
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Archived conversations</Text>
           <Text style={styles.sectionNote}>They stay available to resume.</Text>
@@ -138,6 +151,27 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     liveTime: { marginLeft: 'auto', color: color.textMuted, fontSize: 12 },
     livePrompt: { color: color.claudeBubbleText, fontSize: 18, fontWeight: '600', lineHeight: 24 },
     liveFoot: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+    review: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 11,
+      backgroundColor: color.panel,
+      borderColor: color.line,
+      borderWidth: 1,
+      borderRadius: 18,
+      padding: 14,
+    },
+    reviewIcon: {
+      height: 35,
+      width: 35,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: color.claudeIconBg,
+    },
+    flex: { flex: 1 },
+    reviewTitle: { color: color.text, fontSize: 14, fontWeight: '700' },
+    reviewDetail: { color: color.textMuted, fontSize: 12, marginTop: 3 },
     dot: { height: 7, width: 7, borderRadius: 4 },
     liveDetail: { color: color.claudeText, fontSize: 13, flex: 1 },
     sectionHead: { gap: 3, marginTop: 4 },
