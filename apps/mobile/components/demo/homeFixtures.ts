@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   AgentBranch,
   AgentStatus,
+  Capability,
   GitSnapshot,
   ProjectSummary,
 } from '@axune/protocol';
@@ -35,6 +36,8 @@ export const demoProject: ProjectSummary = {
 export const demoAgents: AgentStatus[] = [
   { agentId: 'claude-code', installed: true, version: '2.1.18', authenticated: 'unknown' },
 ];
+
+export const demoCapability: Capability = 'read-write';
 
 export const demoLiveRun: LiveRun = {
   runId: 'demo-live-run',

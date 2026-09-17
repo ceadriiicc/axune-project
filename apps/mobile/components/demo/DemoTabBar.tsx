@@ -11,11 +11,12 @@ export function DemoTabBar() {
   const router = useRouter();
   const styles = useMemo(() => makeStyles(color), [color]);
   const sessions = pathname.startsWith('/demo/sessions');
+  const agents = pathname.startsWith('/demo/agents');
 
   return (
     <View style={styles.bar}>
       <Tab
-        active={!sessions}
+        active={!sessions && !agents}
         icon="home-outline"
         label="Home"
         onPress={() => router.push('/demo')}
@@ -26,6 +27,13 @@ export function DemoTabBar() {
         icon="chatbubbles-outline"
         label="Sessions"
         onPress={() => router.push('/demo/sessions')}
+        styles={styles}
+      />
+      <Tab
+        active={agents}
+        icon="sparkles-outline"
+        label="Agents"
+        onPress={() => router.push('/demo/agents')}
         styles={styles}
       />
     </View>
