@@ -3,7 +3,7 @@ import type { Capability, MachineSummary, ProjectSummary } from '@axune/protocol
 import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { DemoTabBar } from './DemoTabBar';
 import { type DemoState, useDemoScenario } from './DemoScenario';
 
@@ -25,6 +25,8 @@ export function DemoSettings({
   } = useTheme();
   const router = useRouter();
   const { state, setState } = useDemoScenario();
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [disconnected, setDisconnected] = useState(false);
   const styles = useMemo(() => makeStyles(color), [color]);
   return (
     <View style={styles.page}>
@@ -79,9 +81,14 @@ export function DemoSettings({
           />
           <Action
             icon="unlink-outline"
-            label="Disconnect this machine"
-            detail="Clears this pairing and stored conversations from this phone."
+            label={disconnected ? 'Machine disconnected' : 'Disconnect this machine'}
+            detail={
+              disconnected
+                ? 'Pair the desktop again to restore this demo connection.'
+                : 'Clears this pairing and stored conversations from this phone.'
+            }
             danger
+            onPress={() => !disconnected && setConfirmDisconnect(true)}
             styles={styles}
           />
         </Section>
@@ -120,6 +127,31 @@ export function DemoSettings({
           </Text>
         </Section>
       </ScrollView>
+      <Modal transparent animationType="fade" visible={confirmDisconnect} onRequestClose={() => setConfirmDisconnect(false)}>
+        <View style={styles.dialogScrim}>
+          <View style={styles.dialog}>
+            <Text style={styles.dialogTitle}>Disconnect this machine?</Text>
+            <Text style={styles.dialogCopy}>
+              This is a demo confirmation. A real disconnect removes the desktop pairing from this phone.
+            </Text>
+            <View style={styles.dialogActions}>
+              <Pressable onPress={() => setConfirmDisconnect(false)} style={styles.cancelButton}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setConfirmDisconnect(false);
+                  setDisconnected(true);
+                  setState('offline');
+                }}
+                style={[styles.confirmButton, { backgroundColor: color.danger }]}
+              >
+                <Text style={[styles.confirmText, { color: color.panel }]}>Disconnect</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <DemoTabBar />
     </View>
   );
@@ -159,23 +191,25 @@ function ThemeSlider({
         onMoveShouldSetResponder={() => true}
         onResponderGrant={(event) => update(event.nativeEvent.locationX)}
         onResponderMove={(event) => update(event.nativeEvent.locationX)}
-        style={styles.sliderTrack}
+        style={styles.sliderHitArea}
       >
-        <View
-          style={[styles.sliderFill, { width: `${darkness * 100}%`, backgroundColor: color.text }]}
-        />
-        <View
-          pointerEvents="none"
-          style={[
-            styles.sliderThumb,
-            { left: `${darkness * 100}%`, borderColor: color.panel, backgroundColor: color.text },
-          ]}
-        />
+        <View style={styles.sliderTrack}>
+          <View
+            style={[styles.sliderFill, { width: `${darkness * 100}%`, backgroundColor: color.text }]}
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.sliderThumb,
+              { left: `${darkness * 100}%`, borderColor: color.panel, backgroundColor: color.text },
+            ]}
+          />
+        </View>
       </View>
       <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>Paper</Text>
-        <Text style={styles.sliderLabel}>Graphite</Text>
-        <Text style={styles.sliderLabel}>Black</Text>
+        <Text style={[styles.sliderLabel, { color: color.textMuted }]}>Paper</Text>
+        <Text style={[styles.sliderLabel, { color: color.textMuted }]}>Graphite</Text>
+        <Text style={[styles.sliderLabel, { color: color.textMuted }]}>Black</Text>
       </View>
       <Pressable onPress={onApply} style={[styles.apply, { backgroundColor: color.text }]}>
         <Text style={[styles.applyText, { color: color.panel }]}>Apply appearance</Text>
@@ -302,6 +336,7 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     },
     swatchTitle: { color: color.text, fontSize: 13, fontWeight: '700' },
     swatchDetail: { color: color.textMuted, fontSize: 12, marginTop: 2 },
+    sliderHitArea: { height: 44, justifyContent: 'center' },
     sliderTrack: {
       height: 7,
       borderRadius: 4,
@@ -350,5 +385,14 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
       paddingVertical: 8,
     },
     stateChoiceLabel: { fontSize: 12, fontWeight: '700' },
+    dialogScrim: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: 'rgba(0, 0, 0, 0.48)' },
+    dialog: { backgroundColor: color.panel, borderWidth: 1, borderColor: color.line, borderRadius: 21, padding: 20, gap: 10 },
+    dialogTitle: { color: color.text, fontSize: 19, fontWeight: '700' },
+    dialogCopy: { color: color.textMuted, fontSize: 14, lineHeight: 20 },
+    dialogActions: { flexDirection: 'row', gap: 9, marginTop: 6 },
+    cancelButton: { height: 44, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 13, borderWidth: 1, borderColor: color.lineStrong },
+    cancelText: { color: color.text, fontSize: 13, fontWeight: '700' },
+    confirmButton: { height: 44, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 13 },
+    confirmText: { fontSize: 13, fontWeight: '700' },
     pressed: { opacity: 0.68, transform: [{ scale: 0.99 }] },
   });

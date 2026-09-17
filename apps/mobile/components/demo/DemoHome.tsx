@@ -4,8 +4,9 @@ import type { LiveRun, RunSummary } from '@/lib/WorkspaceContext';
 import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useDemoScenario } from './DemoScenario';
 import { DemoTabBar } from './DemoTabBar';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type WidgetId = 'next' | 'now' | 'health' | 'recent' | 'activity' | 'branches' | 'agents';
 
@@ -31,7 +32,9 @@ const titles: Record<WidgetId, string> = {
 export function DemoHome({ project, agents, live, history, activity, branches }: Props) {
   const { palette: color } = useTheme();
   const { state } = useDemoScenario();
+  const router = useRouter();
   const [widgets, setWidgets] = useState<WidgetId[]>(['next', 'now', 'health', 'recent']);
+  const [runStopped, setRunStopped] = useState(false);
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const styles = useMemo(() => makeStyles(color), [color]);
@@ -136,7 +139,16 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
             styles={styles}
           >
             {id === 'next' && <NextWidget styles={styles} color={color} />}
-            {id === 'now' && <NowWidget styles={styles} color={color} live={live} />}
+            {id === 'now' && (
+              <NowWidget
+                styles={styles}
+                color={color}
+                live={live}
+                onOpen={() => router.push('/demo/sessions')}
+                onStop={() => setRunStopped(true)}
+                stopped={runStopped}
+              />
+            )}
             {id === 'health' && <HealthWidget styles={styles} color={color} project={project} />}
             {id === 'recent' && <RecentWidget styles={styles} color={color} run={history[0]} />}
             {id === 'activity' && (
@@ -285,10 +297,16 @@ function NowWidget({
   styles,
   color,
   live,
+  onOpen,
+  onStop,
+  stopped,
 }: {
   styles: ReturnType<typeof makeStyles>;
   color: ReturnType<typeof useTheme>['palette'];
   live: LiveRun;
+  onOpen: () => void;
+  onStop: () => void;
+  stopped: boolean;
 }) {
   return (
     <View>
@@ -297,22 +315,30 @@ function NowWidget({
           <View style={[styles.avatar, { backgroundColor: color.claudeIconBg }]}>
             <Text style={[styles.avatarText, { color: color.claudeIconText }]}>C</Text>
           </View>
-          <Text style={styles.agentName}>Claude is working</Text>
+          <Text style={styles.agentName}>{stopped ? 'Claude stopped' : 'Claude is working'}</Text>
         </View>
         <Text style={styles.elapsed}>8m</Text>
       </View>
       <Text style={styles.nowPrompt}>{live.prompt}</Text>
       <View style={styles.liveActivity}>
-        <View style={[styles.pulse, { backgroundColor: color.claudeStrong }]} />
-        <Text style={styles.liveText}>Searching session screens</Text>
+        <View style={[styles.pulse, { backgroundColor: stopped ? color.textSoft : color.claudeStrong }]} />
+        <Text style={styles.liveText}>{stopped ? 'Run stopped in this demo' : 'Searching session screens'}</Text>
       </View>
       <View style={styles.actionRow}>
-        <Pressable style={[styles.primaryAction, { backgroundColor: color.text }]}>
+        <Pressable onPress={onOpen} style={[styles.primaryAction, { backgroundColor: color.text }]}>
           <Text style={[styles.primaryLabel, { color: color.panel }]}>Open session</Text>
         </Pressable>
-        <Pressable style={styles.secondaryAction}>
+        {!stopped && <Pressable
+          onPress={() =>
+            Alert.alert('Stop this run?', 'Claude will stop after its current tool completes.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Stop run', style: 'destructive', onPress: onStop },
+            ])
+          }
+          style={styles.secondaryAction}
+        >
           <Text style={styles.secondaryLabel}>Stop run</Text>
-        </Pressable>
+        </Pressable>}
       </View>
     </View>
   );
@@ -448,7 +474,7 @@ function AgentsWidget({
 const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
-    content: { padding: 22, paddingTop: 68, paddingBottom: 40, gap: 14 },
+    content: { padding: 22, paddingTop: 68, paddingBottom: 110, gap: 14 },
     topline: {
       flexDirection: 'row',
       justifyContent: 'space-between',

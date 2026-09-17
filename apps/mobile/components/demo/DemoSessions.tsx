@@ -21,6 +21,7 @@ export function DemoSessions({ threads }: { threads: Thread[] }) {
             <Text style={styles.title}>Sessions</Text>
           </View>
           <Pressable
+            accessibilityLabel="Start a new conversation"
             onPress={() =>
               router.push({ pathname: '/demo/session/[id]' as never, params: { id: 'new' } })
             }
@@ -130,7 +131,7 @@ function relativeTime(at: number) {
 const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
-    content: { padding: 22, paddingTop: 68, paddingBottom: 40, gap: 18 },
+    content: { padding: 22, paddingTop: 68, paddingBottom: 110, gap: 18 },
     head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
     kicker: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
     title: { color: color.text, fontSize: 31, letterSpacing: -1, fontWeight: '600', marginTop: 6 },

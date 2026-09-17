@@ -2,27 +2,31 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Thread } from '@/lib/WorkspaceContext';
 import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 export function DemoSessionChat({ thread, active = false }: { thread: Thread; active?: boolean }) {
   const { palette: color } = useTheme();
   const router = useRouter();
+  const [draft, setDraft] = useState('');
+  const [allowWrite, setAllowWrite] = useState(false);
+  const [stopped, setStopped] = useState(false);
   const styles = useMemo(() => makeStyles(color), [color]);
   const run = thread.runs[thread.runs.length - 1]!;
+  const isActive = active && !stopped;
   return (
     <View style={styles.page}>
       <View style={styles.nav}>
-        <Pressable onPress={() => router.back()} style={styles.navButton}>
+        <Pressable accessibilityLabel="Back to sessions" onPress={() => router.back()} style={styles.navButton}>
           <Ionicons name="chevron-back" size={23} color={color.text} />
         </Pressable>
         <View style={styles.navCenter}>
           <Text style={styles.navTitle}>Session</Text>
           <Text style={styles.navSub}>
-            {active ? 'Claude is working' : 'Archived conversation'}
+            {isActive ? 'Claude is working' : active ? 'Run stopped' : 'Archived conversation'}
           </Text>
         </View>
-        <Pressable style={styles.navButton}>
+        <Pressable accessibilityLabel="Session options" style={styles.navButton}>
           <Ionicons name="ellipsis-horizontal" size={20} color={color.text} />
         </Pressable>
       </View>
@@ -37,12 +41,12 @@ export function DemoSessionChat({ thread, active = false }: { thread: Thread; ac
           </View>
           <View>
             <Text style={styles.agent}>Claude Code</Text>
-            <Text style={styles.status}>{active ? 'Working now' : 'Completed'}</Text>
+            <Text style={styles.status}>{isActive ? 'Working now' : stopped ? 'Stopped' : 'Completed'}</Text>
           </View>
         </View>
         <Text style={styles.answer}>{run.text}</Text>
         <View style={styles.tools}>
-          <Text style={styles.toolTitle}>{active ? 'WORKING NOW' : 'WHAT HAPPENED'}</Text>
+          <Text style={styles.toolTitle}>{isActive ? 'WORKING NOW' : 'WHAT HAPPENED'}</Text>
           {run.activity.map((item) => (
             <View key={item.id} style={styles.tool}>
               <Ionicons
@@ -60,22 +64,66 @@ export function DemoSessionChat({ thread, active = false }: { thread: Thread; ac
                 <Text style={styles.toolLabel}>{item.label}</Text>
                 {item.detail && <Text style={styles.toolDetail}>{item.detail}</Text>}
               </View>
-              {item.ok === null && <Text style={styles.running}>Running</Text>}
+              {isActive && item.ok === null && <Text style={styles.running}>Running</Text>}
             </View>
           ))}
         </View>
-        {active && (
-          <Pressable style={[styles.stop, { borderColor: color.lineStrong }]}>
+        {isActive && (
+          <Pressable
+            onPress={() =>
+              Alert.alert('Stop this run?', 'Claude will stop after its current tool completes.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Stop run', style: 'destructive', onPress: () => setStopped(true) },
+              ])
+            }
+            style={[styles.stop, { borderColor: color.lineStrong }]}
+          >
             <Ionicons name="stop-circle-outline" size={18} color={color.danger} />
             <Text style={[styles.stopText, { color: color.danger }]}>Stop run</Text>
           </Pressable>
         )}
       </ScrollView>
       <View style={styles.composer}>
-        <Text style={styles.placeholder}>Ask a follow-up</Text>
-        <Pressable style={[styles.send, { backgroundColor: color.text }]}>
-          <Ionicons name="arrow-up" size={19} color={color.panel} />
-        </Pressable>
+        <View style={styles.composerTop}>
+          <Text style={styles.composerHint}>This prompt</Text>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: allowWrite }}
+            onPress={() => setAllowWrite((current) => !current)}
+            style={[styles.writeToggle, allowWrite && { backgroundColor: color.claudeBubble }]}
+          >
+            <Ionicons
+              name={allowWrite ? 'create-outline' : 'eye-outline'}
+              size={15}
+              color={allowWrite ? color.claudeText : color.textMuted}
+            />
+            <Text style={[styles.writeToggleText, { color: allowWrite ? color.claudeText : color.textMuted }]}>
+              {allowWrite ? 'Allow write' : 'Read only'}
+            </Text>
+          </Pressable>
+        </View>
+        <View style={styles.composerRow}>
+          <TextInput
+            accessibilityLabel="Follow-up prompt"
+            multiline
+            onChangeText={setDraft}
+            placeholder="Ask a follow-up"
+            placeholderTextColor={color.textSoft}
+            style={styles.input}
+            value={draft}
+          />
+          <Pressable
+            accessibilityLabel="Send prompt"
+            disabled={!draft.trim()}
+            onPress={() => {
+              setDraft('');
+              setAllowWrite(false);
+            }}
+            style={[styles.send, { backgroundColor: color.text }, !draft.trim() && styles.sendDisabled]}
+          >
+            <Ionicons name="arrow-up" size={19} color={color.panel} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -146,13 +194,16 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
       borderTopWidth: 1,
       backgroundColor: color.bg,
       paddingHorizontal: 18,
-      paddingTop: 12,
-      paddingBottom: 24,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
+      paddingTop: 10,
+      paddingBottom: 12,
+      gap: 8,
     },
-    placeholder: { color: color.textSoft, fontSize: 15, flex: 1, paddingLeft: 4 },
+    composerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    composerHint: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
+    writeToggle: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 },
+    writeToggleText: { fontSize: 12, fontWeight: '700' },
+    composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+    input: { color: color.text, fontSize: 15, flex: 1, minHeight: 39, maxHeight: 96, paddingHorizontal: 4, paddingVertical: 8 },
     send: {
       height: 39,
       width: 39,
@@ -160,4 +211,5 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    sendDisabled: { opacity: 0.42 },
   });
