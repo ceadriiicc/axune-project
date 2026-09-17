@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { AgentStatus, Capability } from '@axune/protocol';
-import { useTheme } from '@/lib/ThemeContext';
+import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

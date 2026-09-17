@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ActivityEvent, AgentBranch, AgentStatus, ProjectSummary } from '@axune/protocol';
 import type { LiveRun, RunSummary } from '@/lib/WorkspaceContext';
-import { useTheme } from '@/lib/ThemeContext';
+import { useDemoTheme as useTheme } from './DemoAppearance';
 import { DemoTabBar } from './DemoTabBar';
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { Thread } from '@/lib/WorkspaceContext';
-import { useTheme } from '@/lib/ThemeContext';
+import { useDemoTheme as useTheme } from './DemoAppearance';
 import { DemoTabBar } from './DemoTabBar';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
