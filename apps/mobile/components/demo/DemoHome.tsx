@@ -37,6 +37,7 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
   const [widgets, setWidgets] = useState<WidgetId[]>(['next', 'now', 'health', 'recent']);
   const [runStopped, setRunStopped] = useState(false);
   const [editing, setEditing] = useState(false);
+  const greeting = greetingFor(new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
@@ -65,25 +66,32 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.topline}>
           <View>
-            <Text style={styles.kicker}>YOUR WORKSPACE</Text>
-            <Text style={styles.title}>Good afternoon.</Text>
+            <Text style={styles.kicker}>{greeting}</Text>
+            <Text style={styles.title} numberOfLines={1}>
+              {project.name}
+            </Text>
           </View>
           <Pressable
-            accessibilityLabel="Customize home"
-            onPress={() => (editing ? setEditing(false) : setPickerOpen(true))}
+            accessibilityLabel={editing ? 'Done arranging' : 'Arrange home'}
+            onPress={() => setEditing((on) => !on)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
-            <Ionicons name={editing ? 'checkmark' : 'add'} size={23} color={color.text} />
+            <Ionicons
+              name={editing ? 'checkmark' : 'options-outline'}
+              size={editing ? 23 : 21}
+              color={color.text}
+            />
           </Pressable>
         </View>
 
         <View style={styles.workspace}>
-          <View style={[styles.workspaceMark, { backgroundColor: color.claudeIconBg }]}>
-            <Ionicons name="laptop-outline" size={20} color={color.claudeIconText} />
+          <View style={[styles.workspaceMark, { backgroundColor: color.neutralIconBg }]}>
+            <Ionicons name="laptop-outline" size={20} color={color.neutralIconText} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.workspaceName}>{project.name}</Text>
-            <Text style={styles.workspaceMeta}>{project.branch}</Text>
+            <Text style={styles.workspaceName} numberOfLines={1}>
+              {project.branch}
+            </Text>
           </View>
           <View style={styles.connected}>
             <View
@@ -140,7 +148,7 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
             id={id}
             styles={styles}
           >
-            {id === 'next' && <NextWidget styles={styles} color={color} />}
+            {id === 'next' && <NextWidget styles={styles} color={color} project={project} />}
             {id === 'now' && (
               <NowWidget
                 styles={styles}
@@ -275,25 +283,96 @@ function WidgetFrame({
   );
 }
 
+/**
+ * The greeting, derived rather than asserted.
+ *
+ * It was a fixed 'Good afternoon.' before, which is the kind of detail that
+ * quietly tells someone the screen is a mockup the first time they open the
+ * app in the morning.
+ */
+function greetingFor(now: Date): string {
+  const hour = now.getHours();
+  if (hour < 12) return 'GOOD MORNING';
+  if (hour < 18) return 'GOOD AFTERNOON';
+  return 'GOOD EVENING';
+}
+
 function NextWidget({
   styles,
   color,
+  project,
 }: {
   styles: ReturnType<typeof makeStyles>;
   color: ReturnType<typeof useTheme>['palette'];
+  project: ProjectSummary;
 }) {
+  const advice = nextAdvice(project.git, color);
+  // A quiet repository should say so rather than inventing something urgent.
+  if (!advice) return <Text style={styles.empty}>Nothing is waiting on you.</Text>;
   return (
     <View style={styles.next}>
-      <View style={[styles.alertIcon, { backgroundColor: color.danger }]}>
-        <Ionicons name="git-merge-outline" size={18} color={color.panel} />
+      <View style={[styles.alertIcon, { backgroundColor: advice.tone }]}>
+        <Ionicons name={advice.icon} size={18} color={color.panel} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.nextTitle}>Finish the rebase before your next write run.</Text>
-        <Text style={styles.nextBody}>2 conflicts are waiting in this repository.</Text>
+        <Text style={styles.nextTitle}>{advice.title}</Text>
+        <Text style={styles.nextBody}>{advice.body}</Text>
       </View>
-      <Ionicons name="arrow-forward" size={19} color={color.textMuted} />
+      <Ionicons name="chevron-forward" size={19} color={color.textMuted} />
     </View>
   );
+}
+
+/**
+ * What actually deserves attention, in the order it would hurt.
+ *
+ * Every line here is derived from the git snapshot the desktop already sends.
+ * Returning null when the repository is quiet is the point: a card that always
+ * has something urgent to say teaches people to ignore it.
+ */
+function nextAdvice(
+  git: ProjectSummary['git'],
+  color: ReturnType<typeof useTheme>['palette'],
+): { title: string; body: string; icon: keyof typeof Ionicons.glyphMap; tone: string } | null {
+  if (!git) return null;
+
+  if (git.conflicts > 0) {
+    return {
+      title: 'Resolve the conflicts before your next write run.',
+      body: `${git.conflicts} ${git.conflicts === 1 ? 'conflict is' : 'conflicts are'} waiting in this repository.`,
+      icon: 'git-merge-outline',
+      tone: color.danger,
+    };
+  }
+
+  if (git.inProgress) {
+    return {
+      title: `A ${git.inProgress} is in progress.`,
+      body: 'Finish or abort it before starting a write run.',
+      icon: 'git-branch-outline',
+      tone: color.danger,
+    };
+  }
+
+  if (git.behind && git.behind > 0) {
+    return {
+      title: 'Your branch is behind its upstream.',
+      body: `${git.behind} ${git.behind === 1 ? 'commit' : 'commits'} arrived while you were away.`,
+      icon: 'arrow-down-outline',
+      tone: color.claudeStrong,
+    };
+  }
+
+  if (git.ahead && git.ahead > 0) {
+    return {
+      title: 'You have work that is not pushed.',
+      body: `${git.ahead} ${git.ahead === 1 ? 'commit' : 'commits'} only exist on this machine.`,
+      icon: 'cloud-upload-outline',
+      tone: color.claudeStrong,
+    };
+  }
+
+  return null;
 }
 function NowWidget({
   styles,
@@ -357,17 +436,17 @@ function HealthWidget({
   const git = project.git!;
   return (
     <View style={styles.health}>
-      <View>
+      <View style={styles.healthCell}>
         <Text style={styles.healthNumber}>{git.dirtyFiles + git.untrackedFiles}</Text>
         <Text style={styles.healthLabel}>files changed</Text>
       </View>
       <View style={styles.healthRule} />
-      <View>
+      <View style={styles.healthCell}>
         <Text style={[styles.healthNumber, { color: color.danger }]}>{git.conflicts}</Text>
         <Text style={styles.healthLabel}>conflicts</Text>
       </View>
       <View style={styles.healthRule} />
-      <View>
+      <View style={styles.healthCell}>
         <Text style={styles.healthNumber}>+{git.ahead ?? 0}</Text>
         <Text style={styles.healthLabel}>ahead</Text>
       </View>
@@ -388,8 +467,14 @@ function RecentWidget({
     <View>
       <Text style={styles.recentPrompt}>{run.prompt}</Text>
       <View style={styles.recentMeta}>
-        <Text style={styles.recentDetail}>{run.filesRead} files read</Text>
-        <Text style={styles.recentDetail}>{run.commands} commands</Text>
+        <Text style={styles.recentDetail}>
+          {[
+            run.filesRead ? `${run.filesRead} files read` : null,
+            run.commands ? `${run.commands} commands` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </Text>
         <Text style={[styles.done, { color: color.ok }]}>Completed</Text>
       </View>
     </View>
@@ -608,7 +693,8 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeI
       borderColor: color.lineStrong,
     },
     secondaryLabel: { fontSize: 13, fontWeight: '700' },
-    health: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
+    health: { flexDirection: 'row', alignItems: 'center' },
+    healthCell: { flex: 1, alignItems: 'center' },
     healthNumber: {
       color: color.text,
       fontSize: 24,
@@ -619,7 +705,13 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeI
     healthLabel: { color: color.textMuted, fontSize: 12, marginTop: 2, textAlign: 'center' },
     healthRule: { height: 34, width: 1, backgroundColor: color.line },
     recentPrompt: { color: color.text, fontSize: 15, lineHeight: 21 },
-    recentMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 10 },
+    recentMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 9,
+      marginTop: 10,
+    },
     recentDetail: { color: color.textMuted, fontSize: 12 },
     done: { marginLeft: 'auto', fontSize: 12, fontWeight: '700' },
     timeline: { flexDirection: 'row', gap: 11, marginBottom: 13 },
