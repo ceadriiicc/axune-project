@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@axune/protocol": "file:../../packages/protocol",
+    "@axune/secure-channel": "file:../../packages/secure-channel",
     "@axune/shared": "file:../../packages/shared",
     "@expo/vector-icons": "^15.0.2",
     "expo": "^57.0.0",

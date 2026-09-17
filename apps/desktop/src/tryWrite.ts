@@ -18,6 +18,7 @@ import { WebSocket } from 'ws';
 import { AxuneServer } from './core/AxuneServer';
 import { PairingManager } from './core/PairingManager';
 import { listenOnKnownPort } from './core/port';
+import { FakePhone } from './testing/FakePhone';
 
 const execFileAsync = promisify(execFile);
 const REPO = process.argv[2] ?? 'C:/dev/axune';
@@ -43,7 +44,7 @@ async function main() {
     console.log('note: the usual port was busy, so a paired phone cannot reach this run.');
   }
   const payload = pairing.issue(port, 'axune');
-  const phone = await connect(port);
+  const phone = await connect(port, server.identity.publicKeyEncoded);
 
   phone.send(
     JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'test', protocolVersion: 1 }),
@@ -133,15 +134,17 @@ async function branch(cwd: string): Promise<string> {
   return stdout.trim();
 }
 
-function connect(port: number): Promise<WebSocket> {
-  const sock = new WebSocket(`ws://127.0.0.1:${port}`);
-  return new Promise((resolve, reject) => {
-    sock.once('open', () => resolve(sock));
-    sock.once('error', reject);
-  });
+/**
+ * Open a connection that speaks the real encrypted protocol.
+ *
+ * The desktop refuses plaintext outright, so a raw socket here would simply
+ * be closed on. `desktopPublicKey` is whatever the QR would have carried.
+ */
+function connect(port: number, desktopPublicKey: string): Promise<FakePhone> {
+  return FakePhone.connect(port, desktopPublicKey);
 }
 
-function waitFor(sock: WebSocket, predicate: (m: ServerMessage) => boolean): Promise<ServerMessage> {
+function waitFor(sock: FakePhone, predicate: (m: ServerMessage) => boolean): Promise<ServerMessage> {
   return new Promise((resolve) => {
     const onMessage = (raw: unknown) => {
       const msg = JSON.parse(String(raw)) as ServerMessage;

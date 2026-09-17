@@ -18,9 +18,20 @@ import { WebSocket } from 'ws';
 
 import { AxuneServer } from './core/AxuneServer';
 import { PairingManager } from './core/PairingManager';
+import { DeviceIdentity } from './core/DeviceIdentity';
 import { SessionStore } from './core/SessionStore';
+import { FakePhone } from './testing/FakePhone';
 
 const scratch = mkdtempSync(join(tmpdir(), 'axune-restart-'));
+/**
+ * One identity for every server here, written under the scratch directory.
+ *
+ * Shared because these servers model one machine restarting, and a restart
+ * reads the same identity file back - a fresh key per launch would
+ * invalidate every paired phone, which is the failure this models the
+ * absence of. Under scratch because a test must not touch the real one.
+ */
+const identity = new DeviceIdentity(join(scratch, 'identity.json'));
 const statePath = join(scratch, 'desktop-state.json');
 
 const project = {
@@ -36,13 +47,13 @@ async function main() {
   console.log(`state file : ${statePath}\n`);
 
   // ---- first launch: pair once, the way a QR scan does ------------------
-  const first = new AxuneServer(new PairingManager(), { ...project }, new SessionStore(statePath));
+  const first = new AxuneServer(new PairingManager(), { ...project }, new SessionStore(statePath), identity);
   const portA = await first.start(0);
   const payload = first.pairing.issue(portA, 'axune');
 
   let sessionToken = '';
   await check('a QR token pairs on first launch', async () => {
-    const sock = await connect(portA);
+    const sock = await connect(portA, identity.publicKeyEncoded);
     sock.send(
       JSON.stringify({
         type: 'pair',
@@ -62,14 +73,14 @@ async function main() {
   console.log('\n  — desktop stopped, as if Ctrl+C —\n');
 
   // ---- second launch: a brand new PairingManager, same state file -------
-  const second = new AxuneServer(new PairingManager(), { ...project }, new SessionStore(statePath));
+  const second = new AxuneServer(new PairingManager(), { ...project }, new SessionStore(statePath), identity);
   const portB = await second.start(0);
   // A fresh code is minted on every launch and deliberately not redeemed —
   // the phone should never need it.
   second.pairing.issue(portB, 'axune');
 
   await check('the same phone resumes without rescanning', async () => {
-    const sock = await connect(portB);
+    const sock = await connect(portB, identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'resume', token: sessionToken, runId: 'none', lastSeq: -1 }));
     const reply = await waitFor(sock, ['resumed', 'pair_rejected'], 5000);
     sock.close();
@@ -79,7 +90,7 @@ async function main() {
   });
 
   await check('an unknown session token is still refused', async () => {
-    const sock = await connect(portB);
+    const sock = await connect(portB, identity.publicKeyEncoded);
     sock.send(
       JSON.stringify({ type: 'resume', token: 'not-a-real-token', runId: 'none', lastSeq: -1 }),
     );
@@ -97,7 +108,7 @@ async function main() {
   // arrive as a finished run, because the phone renders the prompt the moment
   // it is sent and a dropped request spins for ever.
   await check('a run for an agent with no adapter is refused, not dropped', async () => {
-    const sock = await connect(portB);
+    const sock = await connect(portB, identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'resume', token: sessionToken, runId: 'none', lastSeq: -1 }));
     if (!(await waitFor(sock, ['resumed'], 5000))) {
       sock.close();
@@ -125,7 +136,7 @@ async function main() {
   });
 
   await check('a paired-mode request is refused rather than half-answered', async () => {
-    const sock = await connect(portB);
+    const sock = await connect(portB, identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'resume', token: sessionToken, runId: 'none', lastSeq: -1 }));
     if (!(await waitFor(sock, ['resumed'], 5000))) {
       sock.close();
@@ -174,11 +185,11 @@ async function main() {
       }),
     );
 
-    const third = new AxuneServer(new PairingManager(), { ...project }, new SessionStore(stale));
+    const third = new AxuneServer(new PairingManager(), { ...project }, new SessionStore(stale), identity);
     const portC = await third.start(0);
 
     const tryToken = async (token: string) => {
-      const sock = await connect(portC);
+      const sock = await connect(portC, identity.publicKeyEncoded);
       sock.send(JSON.stringify({ type: 'resume', token, runId: 'none', lastSeq: -1 }));
       const reply = await waitFor(sock, ['resumed', 'pair_rejected'], 5000);
       sock.close();
@@ -236,7 +247,7 @@ async function check(name: string, run: () => Promise<string>): Promise<void> {
  * a request the desktop silently drops leaves the phone spinning.
  */
 function runOutcome(
-  sock: WebSocket,
+  sock: FakePhone,
   runId: string,
   timeoutMs: number,
 ): Promise<{ finished: string; error?: string } | null> {
@@ -263,12 +274,14 @@ function runOutcome(
   });
 }
 
-function connect(port: number): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const sock = new WebSocket(`ws://127.0.0.1:${port}`);
-    sock.once('open', () => resolve(sock));
-    sock.once('error', reject);
-  });
+/**
+ * Open a connection that speaks the real encrypted protocol.
+ *
+ * The desktop refuses plaintext outright, so a raw socket here would simply
+ * be closed on. `desktopPublicKey` is whatever the QR would have carried.
+ */
+function connect(port: number, desktopPublicKey: string): Promise<FakePhone> {
+  return FakePhone.connect(port, desktopPublicKey);
 }
 
 /**
@@ -279,7 +292,7 @@ function connect(port: number): Promise<WebSocket> {
  * purely because the git watcher spoke first.
  */
 function waitFor(
-  sock: WebSocket,
+  sock: FakePhone,
   types: readonly string[],
   timeoutMs: number,
 ): Promise<ServerMessage | null> {

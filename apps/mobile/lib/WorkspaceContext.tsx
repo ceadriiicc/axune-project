@@ -27,6 +27,7 @@ import {
   savePairing,
   saveLastSeenAt,
 } from './pairingStore';
+import { phoneRandom } from './random';
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './threadStore';
 
 /**
@@ -222,6 +223,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               url: credential.url,
               urls: credential.urls,
               sessionToken: credential.sessionToken,
+              publicKey: credential.publicKey,
               projectName: name,
               pairedAt: Date.now(),
             });
@@ -242,6 +244,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             url: credential.url,
             urls: credential.urls,
             sessionToken: credential.sessionToken,
+            publicKey: credential.publicKey,
             projectName: proj.name,
             pairedAt: Date.now(),
           });
@@ -286,7 +289,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           current.map((run) => (run.runId === runId ? { ...run, changes: result } : run)),
         ),
       onGap: (_runId, missed) => setConnectionDetail(`caught up — replayed ${missed} events`),
-    });
+    }, phoneRandom);
     return clientRef.current;
   }, [applyEvent]);
 
@@ -461,6 +464,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       client.reconnectWithSession(
         stored.urls?.length ? stored.urls : [stored.url],
         stored.sessionToken,
+        stored.publicKey,
       );
     })();
     return () => {

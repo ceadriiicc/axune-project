@@ -18,6 +18,7 @@ import { WebSocket } from 'ws';
 import { AxuneServer } from './core/AxuneServer';
 import { PairingManager, lanAddress } from './core/PairingManager';
 import { listenOnKnownPort } from './core/port';
+import { FakePhone } from './testing/FakePhone';
 
 const REPO = process.argv[2] ?? 'C:/dev/axune';
 const PROMPT =
@@ -44,7 +45,7 @@ async function main() {
 
   // 1 — an unpaired socket must be inert.
   await check('unpaired socket is ignored', async () => {
-    const sock = await connect(port);
+    const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'start_run', runId: 'x', sessionId: 'x', prompt: 'hi', agentIds: [], mode: 'independent' }));
     const reply = await waitFor(sock, [], 800);
     sock.close();
@@ -53,7 +54,7 @@ async function main() {
 
   // 2 — a bad token is refused.
   await check('bad token rejected', async () => {
-    const sock = await connect(port);
+    const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'pair', token: 'wrong', deviceName: 'fake', protocolVersion: 1 }));
     const reply = await waitFor(sock, ['pair_rejected', 'paired'], 5000);
     sock.close();
@@ -61,7 +62,7 @@ async function main() {
   });
 
   // 3 — the real token pairs.
-  const phone = await connect(port);
+  const phone = await connect(port, server.identity.publicKeyEncoded);
   let sessionToken = '';
   await check('valid token pairs', async () => {
     phone.send(JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'iPhone (fake)', protocolVersion: 1 }));
@@ -74,7 +75,7 @@ async function main() {
 
   // 4 — the same token cannot be used twice.
   await check('token cannot be reused', async () => {
-    const sock = await connect(port);
+    const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'attacker', protocolVersion: 1 }));
     const reply = await waitFor(sock, ['pair_rejected', 'paired'], 5000);
     sock.close();
@@ -123,7 +124,7 @@ async function main() {
   // 6 — reconnect and replay only what was missed.
   const cutoff = Math.floor(Math.max(...seen) / 2);
   await check(`reconnect replays events after seq ${cutoff}`, async () => {
-    const reconnected = await connect(port);
+    const reconnected = await connect(port, server.identity.publicKeyEncoded);
     reconnected.send(JSON.stringify({ type: 'resume', token: sessionToken || 'unknown', runId, lastSeq: cutoff }));
     const first = await waitFor(reconnected, ['resumed', 'pair_rejected'], 5000);
     reconnected.close();
@@ -150,12 +151,14 @@ async function check(label: string, fn: () => Promise<string>): Promise<void> {
   }
 }
 
-function connect(port: number): Promise<WebSocket> {
-  const sock = new WebSocket(`ws://127.0.0.1:${port}`);
-  return new Promise((resolve, reject) => {
-    sock.once('open', () => resolve(sock));
-    sock.once('error', reject);
-  });
+/**
+ * Open a connection that speaks the real encrypted protocol.
+ *
+ * The desktop refuses plaintext outright, so a raw socket here would simply
+ * be closed on. `desktopPublicKey` is whatever the QR would have carried.
+ */
+function connect(port: number, desktopPublicKey: string): Promise<FakePhone> {
+  return FakePhone.connect(port, desktopPublicKey);
 }
 
 /**
@@ -170,7 +173,7 @@ function connect(port: number): Promise<WebSocket> {
  * silence.
  */
 function waitFor(
-  sock: WebSocket,
+  sock: FakePhone,
   types: readonly string[],
   timeoutMs: number,
 ): Promise<ServerMessage | null> {

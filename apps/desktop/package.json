@@ -20,6 +20,7 @@
     "@axune/agent-core": "file:../../packages/agent-core",
     "@axune/git-core": "file:../../packages/git-core",
     "@axune/protocol": "file:../../packages/protocol",
+    "@axune/secure-channel": "file:../../packages/secure-channel",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.0"
   },

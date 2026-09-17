@@ -22,6 +22,16 @@ export interface StoredPairing {
    */
   urls?: string[];
   sessionToken: string;
+  /**
+   * The desktop's public key, base64url, as read from the QR.
+   *
+   * Stored because a reconnect has no QR to read it from again, and without
+   * it the phone has no way to tell the real desktop from anything else that
+   * has taken that address since. Kept beside the session token rather than
+   * in plain storage - not because a public key is secret, but because a
+   * pairing that can be silently edited is a pairing that can be redirected.
+   */
+  publicKey: string;
   projectName: string;
   pairedAt: number;
 }
@@ -42,7 +52,11 @@ export async function loadPairing(): Promise<StoredPairing | null> {
     const raw = await SecureStore.getItemAsync(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredPairing;
-    if (!parsed.url || !parsed.sessionToken) return null;
+    // A pairing stored before the link was encrypted has no key to pin, and
+    // there is no safe way to reconnect without one. Treated as no pairing at
+    // all, so the phone offers a QR instead of quietly connecting in the
+    // clear - the rescan costs seconds and is the honest outcome.
+    if (!parsed.url || !parsed.sessionToken || !parsed.publicKey) return null;
     return parsed;
   } catch {
     return null;
