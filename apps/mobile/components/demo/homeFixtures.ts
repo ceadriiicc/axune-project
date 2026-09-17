@@ -54,6 +54,10 @@ export const demoPairingPayload: PairingPayload = {
   url: 'ws://cedric-desktop.local:4318',
   urls: ['ws://cedric-desktop.local:4318', 'ws://192.168.1.18:4318'],
   token: 'demo-pairing-token-not-a-credential',
+  // A real X25519 public key, so the verification code derived from it on the
+  // confirmation screen is a genuine one rather than a string that happens to
+  // be the right length. The private half was discarded at generation.
+  publicKey: '_RSZ1FkdHkA2cN1nDQyMIeMWE5thfOzSaUiadI7nkhk',
   expiresAt: now + 1000 * 60,
   projectName: demoProject.name,
 };
