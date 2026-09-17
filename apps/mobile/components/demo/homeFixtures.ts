@@ -5,6 +5,7 @@ import type {
   Capability,
   ChangeSet,
   MachineSummary,
+  PairingPayload,
   GitSnapshot,
   ProjectSummary,
 } from '@axune/protocol';
@@ -45,6 +46,16 @@ export const demoMachine: MachineSummary = {
   name: 'CEDRIC-DESKTOP',
   platform: 'Windows 11',
   connection: 'local',
+};
+
+export const demoPairingPayload: PairingPayload = {
+  kind: 'axune',
+  protocolVersion: 1,
+  url: 'ws://cedric-desktop.local:4318',
+  urls: ['ws://cedric-desktop.local:4318', 'ws://192.168.1.18:4318'],
+  token: 'demo-pairing-token-not-a-credential',
+  expiresAt: now + 1000 * 60,
+  projectName: demoProject.name,
 };
 
 export const demoLiveRun: LiveRun = {

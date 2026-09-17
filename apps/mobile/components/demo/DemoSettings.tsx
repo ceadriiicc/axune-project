@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { Capability, MachineSummary, ProjectSummary } from '@axune/protocol';
 import { useDemoTheme as useTheme } from './DemoAppearance';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { DemoTabBar } from './DemoTabBar';
@@ -21,6 +22,7 @@ export function DemoSettings({
     setDraftDarkness,
     applyAppearance,
   } = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => makeStyles(color), [color]);
   return (
     <View style={styles.page}>
@@ -70,6 +72,7 @@ export function DemoSettings({
             icon="qr-code-outline"
             label="Pair another machine"
             detail="Scan a QR code from Axune Desktop."
+            onPress={() => router.push('/demo/pair')}
             styles={styles}
           />
           <Action
@@ -197,17 +200,22 @@ function Action({
   label,
   detail,
   danger = false,
+  onPress,
   styles,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   detail: string;
   danger?: boolean;
+  onPress?: () => void;
   styles: ReturnType<typeof makeStyles>;
 }) {
   const { palette: color } = useTheme();
   return (
-    <Pressable style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+    >
       <Ionicons name={icon} size={19} color={danger ? color.danger : color.text} />
       <View style={styles.flex}>
         <Text style={[styles.actionLabel, danger && { color: color.danger }]}>{label}</Text>
