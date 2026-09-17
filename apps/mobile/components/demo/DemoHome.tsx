@@ -7,6 +7,7 @@ import { DemoTabBar } from './DemoTabBar';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 type WidgetId = 'next' | 'now' | 'health' | 'recent' | 'activity' | 'branches' | 'agents';
 
@@ -37,7 +38,8 @@ export function DemoHome({ project, agents, live, history, activity, branches }:
   const [runStopped, setRunStopped] = useState(false);
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   const missing = (Object.keys(titles) as WidgetId[]).filter((id) => !widgets.includes(id));
 
   const move = (id: WidgetId, direction: -1 | 1) => {
@@ -471,10 +473,15 @@ function AgentsWidget({
   );
 }
 
-const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
-    content: { padding: 22, paddingTop: 68, paddingBottom: 110, gap: 14 },
+    content: {
+      padding: 22,
+      paddingTop: Math.max(68, insets.top + 20),
+      paddingBottom: 110 + insets.bottom,
+      gap: 14,
+    },
     topline: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -626,7 +633,7 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
       borderWidth: 1,
       borderColor: color.line,
       padding: 22,
-      paddingBottom: 42,
+      paddingBottom: 42 + insets.bottom,
       gap: 4,
     },
     sheetHandle: {

@@ -4,12 +4,14 @@ import { useDemoTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 export function DemoChangeReview({ result }: { result: ChangeSet }) {
   const { palette: color } = useDemoTheme();
   const router = useRouter();
   const [decision, setDecision] = useState<'keep' | 'discard' | null>(null);
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   return (
     <View style={styles.page}>
       <View style={styles.nav}>
@@ -129,11 +131,11 @@ export function DemoChangeReview({ result }: { result: ChangeSet }) {
     </View>
   );
 }
-const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
     nav: {
-      paddingTop: 57,
+      paddingTop: Math.max(57, insets.top + 12),
       paddingHorizontal: 18,
       paddingBottom: 12,
       borderBottomWidth: 1,
@@ -145,7 +147,7 @@ const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette']) =>
     navButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
     navTitle: { color: color.text, fontSize: 15, fontWeight: '700', textAlign: 'center' },
     navSub: { color: color.textMuted, fontSize: 11, textAlign: 'center', marginTop: 2 },
-    content: { padding: 22, paddingBottom: 108, gap: 18 },
+    content: { padding: 22, paddingBottom: 108 + insets.bottom, gap: 18 },
     summary: { backgroundColor: color.claudeBubble, borderRadius: 19, padding: 17, gap: 8 },
     kicker: { color: color.claudeText, fontSize: 11, letterSpacing: 1, fontWeight: '700' },
     branch: { color: color.claudeBubbleText, fontSize: 16, fontWeight: '700' },
@@ -203,7 +205,7 @@ const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette']) =>
       right: 0,
       paddingHorizontal: 18,
       paddingTop: 12,
-      paddingBottom: 24,
+      paddingBottom: 24 + insets.bottom,
       backgroundColor: color.bg,
       borderTopWidth: 1,
       borderColor: color.line,

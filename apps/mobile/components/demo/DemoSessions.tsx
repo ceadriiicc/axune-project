@@ -6,12 +6,14 @@ import { DemoTabBar } from './DemoTabBar';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 export function DemoSessions({ threads }: { threads: Thread[] }) {
   const { palette: color } = useTheme();
   const { state } = useDemoScenario();
   const router = useRouter();
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   return (
     <View style={styles.page}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -128,10 +130,15 @@ function relativeTime(at: number) {
   const hours = Math.max(1, Math.round((Date.now() - at) / 3_600_000));
   return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
 }
-const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
-    content: { padding: 22, paddingTop: 68, paddingBottom: 110, gap: 18 },
+    content: {
+      padding: 22,
+      paddingTop: Math.max(68, insets.top + 20),
+      paddingBottom: 110 + insets.bottom,
+      gap: 18,
+    },
     head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
     kicker: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
     title: { color: color.text, fontSize: 31, letterSpacing: -1, fontWeight: '600', marginTop: 6 },

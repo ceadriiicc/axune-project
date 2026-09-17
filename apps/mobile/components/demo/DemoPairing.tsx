@@ -4,12 +4,14 @@ import { useDemoTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 export function DemoPairing({ payload }: { payload: PairingPayload }) {
   const { palette: color } = useDemoTheme();
   const router = useRouter();
   const [stage, setStage] = useState<'scan' | 'confirm' | 'connecting' | 'done'>('scan');
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   if (stage === 'connecting')
     return (
       <Centered
@@ -137,11 +139,11 @@ function Centered({
     </View>
   );
 }
-const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useDemoTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
     top: {
-      paddingTop: 57,
+      paddingTop: Math.max(57, insets.top + 12),
       paddingHorizontal: 18,
       paddingBottom: 13,
       borderBottomColor: color.line,

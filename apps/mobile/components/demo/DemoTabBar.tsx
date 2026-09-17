@@ -3,13 +3,15 @@ import { useDemoTheme as useTheme } from './DemoAppearance';
 import { usePathname, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 /** Demo-only navigation grows as each concept page is designed. */
 export function DemoTabBar() {
   const { palette: color } = useTheme();
   const pathname = usePathname();
   const router = useRouter();
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   const sessions = pathname.startsWith('/demo/sessions');
   const agents = pathname.startsWith('/demo/agents');
   const settings = pathname.startsWith('/demo/settings');
@@ -70,13 +72,13 @@ function Tab({
   );
 }
 
-const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     bar: {
       position: 'absolute',
       left: 18,
       right: 18,
-      bottom: 18,
+      bottom: Math.max(18, insets.bottom + 8),
       height: 60,
       borderRadius: 20,
       borderWidth: 1,

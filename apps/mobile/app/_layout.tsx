@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -21,11 +22,13 @@ export default function RootLayout() {
   // active palette. Split into an inner component because the navigator needs
   // to read the theme, and a provider cannot consume its own context.
   return (
-    <ThemeProvider>
-      <WorkspaceProvider>
-        <Shell />
-      </WorkspaceProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <WorkspaceProvider>
+          <Shell />
+        </WorkspaceProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 

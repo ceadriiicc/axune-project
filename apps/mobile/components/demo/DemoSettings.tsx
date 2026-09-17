@@ -4,6 +4,7 @@ import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 import { DemoTabBar } from './DemoTabBar';
 import { type DemoState, useDemoScenario } from './DemoScenario';
 
@@ -27,7 +28,8 @@ export function DemoSettings({
   const { state, setState } = useDemoScenario();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   return (
     <View style={styles.page}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -289,10 +291,15 @@ function Action({
     </Pressable>
   );
 }
-const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
-    content: { padding: 22, paddingTop: 68, paddingBottom: 110, gap: 22 },
+    content: {
+      padding: 22,
+      paddingTop: Math.max(68, insets.top + 20),
+      paddingBottom: 110 + insets.bottom,
+      gap: 22,
+    },
     kicker: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
     title: { color: color.text, fontSize: 31, letterSpacing: -1, fontWeight: '600', marginTop: 6 },
     section: { gap: 9 },

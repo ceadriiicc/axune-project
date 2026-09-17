@@ -4,6 +4,7 @@ import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 export function DemoSessionChat({ thread, active = false }: { thread: Thread; active?: boolean }) {
   const { palette: color } = useTheme();
@@ -11,7 +12,8 @@ export function DemoSessionChat({ thread, active = false }: { thread: Thread; ac
   const [draft, setDraft] = useState('');
   const [allowWrite, setAllowWrite] = useState(false);
   const [stopped, setStopped] = useState(false);
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   const run = thread.runs[thread.runs.length - 1]!;
   const isActive = active && !stopped;
   return (
@@ -128,12 +130,12 @@ export function DemoSessionChat({ thread, active = false }: { thread: Thread; ac
     </View>
   );
 }
-const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
     nav: {
       paddingHorizontal: 18,
-      paddingTop: 58,
+      paddingTop: Math.max(58, insets.top + 12),
       paddingBottom: 12,
       flexDirection: 'row',
       alignItems: 'center',
@@ -145,7 +147,7 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
     navCenter: { alignItems: 'center' },
     navTitle: { color: color.text, fontSize: 15, fontWeight: '700' },
     navSub: { color: color.textMuted, fontSize: 11, marginTop: 1 },
-    content: { padding: 22, gap: 20, paddingBottom: 130 },
+    content: { padding: 22, gap: 20, paddingBottom: 130 + insets.bottom },
     prompt: { backgroundColor: color.panelAlt, borderRadius: 17, padding: 16, gap: 7 },
     promptLabel: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
     promptText: { color: color.text, fontSize: 17, fontWeight: '600', lineHeight: 24 },
@@ -195,7 +197,7 @@ const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
       backgroundColor: color.bg,
       paddingHorizontal: 18,
       paddingTop: 10,
-      paddingBottom: 12,
+      paddingBottom: 12 + insets.bottom,
       gap: 8,
     },
     composerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

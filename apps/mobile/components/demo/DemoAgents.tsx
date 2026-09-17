@@ -4,6 +4,7 @@ import { useDemoTheme as useTheme } from './DemoAppearance';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 import { DemoTabBar } from './DemoTabBar';
 
 export function DemoAgents({
@@ -15,7 +16,8 @@ export function DemoAgents({
 }) {
   const { palette: color } = useTheme();
   const router = useRouter();
-  const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => makeStyles(color, insets), [color, insets]);
   const claude = agents.find((agent) => agent.agentId === 'claude-code');
 
   return (
@@ -139,10 +141,15 @@ function Detail({
     </View>
   );
 }
-const makeStyles = (color: ReturnType<typeof useTheme>['palette']) =>
+const makeStyles = (color: ReturnType<typeof useTheme>['palette'], insets: EdgeInsets) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: color.bg },
-    content: { padding: 22, paddingTop: 68, paddingBottom: 110, gap: 20 },
+    content: {
+      padding: 22,
+      paddingTop: Math.max(68, insets.top + 20),
+      paddingBottom: 110 + insets.bottom,
+      gap: 20,
+    },
     kicker: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
     title: { color: color.text, fontSize: 31, letterSpacing: -1, fontWeight: '600', marginTop: 6 },
     intro: { color: color.textMuted, fontSize: 15, marginTop: 7 },
