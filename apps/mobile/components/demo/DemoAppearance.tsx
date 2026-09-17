@@ -44,11 +44,11 @@ function blendPalette(amount: number): Palette {
   return {
     ...mixed,
     // Neutrals are designed as a scale, not mechanically blended brand tokens.
-    bg: rgb([248, 244, 236], [10, 13, 17], amount),
-    screen: rgb([255, 252, 247], [15, 19, 24], amount),
+    bg: rgb([246, 240, 228], [10, 13, 17], amount),
+    screen: rgb([255, 250, 242], [15, 19, 24], amount),
     // In darkness, surfaces rise in luminance so hierarchy remains visible.
-    panel: rgb([255, 253, 249], [24, 30, 38], amount),
-    panelAlt: rgb([239, 233, 221], [34, 42, 52], amount),
+    panel: rgb([255, 252, 246], [24, 30, 38], amount),
+    panelAlt: rgb([235, 226, 209], [34, 42, 52], amount),
     line: darkForeground ? 'rgba(15, 23, 32, 0.16)' : 'rgba(255, 255, 255, 0.12)',
     lineStrong: darkForeground ? 'rgba(15, 23, 32, 0.32)' : 'rgba(255, 255, 255, 0.24)',
     text: darkForeground ? 'rgb(14, 20, 27)' : 'rgb(246, 248, 250)',
