@@ -11,14 +11,18 @@
  *   4. a reconnect replays exactly what was missed, by seq
  */
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { ServerMessage } from '@axune/protocol';
 import { WebSocket } from 'ws';
 
 import { AxuneServer } from './core/AxuneServer';
+import { DeviceIdentity } from './core/DeviceIdentity';
 import { PairingManager, lanAddress } from './core/PairingManager';
 import { listenOnKnownPort } from './core/port';
 import { FakePhone } from './testing/FakePhone';
+import { fingerprint, fromBase64Url } from '@axune/secure-channel';
 
 const REPO = process.argv[2] ?? 'C:/dev/axune';
 const PROMPT =
@@ -44,6 +48,30 @@ async function main() {
   console.log(`qr token : ${payload.token.slice(0, 12)}…  (expires in 2 min)\n`);
 
   // 1 — an unpaired socket must be inert.
+  await check('the code on screen is the code the phone will show', async () => {
+    // The verification step is only worth a tap if both ends derive the same
+    // code from the same key. If they ever disagreed, the screen would be
+    // teaching people to ignore a mismatch - which is worse than showing no
+    // code at all, because it trains away the one check that catches a
+    // substituted desktop.
+    const onScreen = server.identity.fingerprint;
+    // Exactly what the phone does with the payload it scans.
+    const onPhone = fingerprint(fromBase64Url(payload.publicKey));
+    if (onScreen !== onPhone) {
+      return `MISMATCH: desktop prints ${onScreen}, phone derives ${onPhone}`;
+    }
+    if (!/^[0-9A-F]{5} [0-9A-F]{5}$/.test(onPhone)) {
+      return `MISMATCH: ${onPhone} is not a shape anyone can compare at a glance`;
+    }
+    // And a different machine must not land on the same code, or comparing
+    // them would be theatre.
+    const other = new DeviceIdentity(join(tmpdir(), `axune-fp-${Date.now()}.json`));
+    if (other.fingerprint === onPhone) {
+      return 'MISMATCH: a different identity produced the same code';
+    }
+    return `${onPhone} on both, and a different machine shows ${other.fingerprint}`;
+  });
+
   await check('unpaired socket is ignored', async () => {
     const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'start_run', runId: 'x', sessionId: 'x', prompt: 'hi', agentIds: [], mode: 'independent' }));
