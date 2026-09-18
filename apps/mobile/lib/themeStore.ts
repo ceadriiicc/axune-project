@@ -1,5 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
+import { parseDarkness } from './darkness';
+
 /**
  * Which theme the user picked.
  *
@@ -33,5 +35,37 @@ export async function saveThemeMode(mode: ThemeMode): Promise<void> {
   } catch {
     // The choice still applies for this session; it simply will not survive a
     // relaunch. Not worth surfacing an error over an appearance setting.
+  }
+}
+
+const DARKNESS_KEY = 'axune.darkness.v1';
+
+/**
+ * How dark the interface should be, from 0 (paper) to 1 (black).
+ *
+ * The appearance control is a continuous slider rather than a light/dark
+ * switch, so the preference is a number rather than one of three names. It is
+ * stored separately from `ThemeMode` on purpose: they answer different
+ * questions, and a future build that drops one should not have to migrate the
+ * other.
+ *
+ * Null means the person has never chosen, which is not the same as choosing
+ * zero - the caller follows the phone in that case, exactly as `system` does.
+ */
+export async function loadDarkness(): Promise<number | null> {
+  try {
+    return parseDarkness(await SecureStore.getItemAsync(DARKNESS_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDarkness(amount: number): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(DARKNESS_KEY, String(amount), {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } catch {
+    // As above: the choice holds for this session and is simply forgotten.
   }
 }

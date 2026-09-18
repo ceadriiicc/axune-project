@@ -1,6 +1,7 @@
 import { palettes, type Palette } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import { loadDarkness, saveDarkness } from '@/lib/themeStore';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 interface DemoAppearance {
@@ -13,12 +14,37 @@ interface DemoAppearance {
 
 const Context = createContext<DemoAppearance | null>(null);
 
-/** A demo-only continuous palette between Axune's existing light and dark tokens. */
+/** A continuous palette between Axune's existing light and dark tokens. */
 export function DemoAppearanceProvider({ children }: { children: React.ReactNode }) {
   const { scheme } = useTheme();
   const initial = scheme === 'dark' ? 1 : 0;
   const [draftDarkness, setDraftDarknessState] = useState(initial);
   const [appliedDarkness, setAppliedDarkness] = useState(initial);
+
+  /**
+   * A chosen appearance survives a relaunch; an unchosen one follows the phone.
+   *
+   * The slider used to live in React state alone, so every restart threw the
+   * choice away and snapped back to the system's light or dark. Persisting it
+   * is what makes it a setting rather than a toy - and it follows the rule
+   * `ThemeMode` already states: the system default is never wrong, an explicit
+   * override is remembered.
+   *
+   * Null from the store means never chosen, which is deliberately not the same
+   * as having chosen zero.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void loadDarkness().then((stored) => {
+      if (cancelled || stored === null) return;
+      setDraftDarknessState(stored);
+      setAppliedDarkness(stored);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const palette = useMemo(() => blendPalette(appliedDarkness), [appliedDarkness]);
   const value = useMemo<DemoAppearance>(
     () => ({
@@ -28,6 +54,9 @@ export function DemoAppearanceProvider({ children }: { children: React.ReactNode
       setDraftDarkness: (next) => setDraftDarknessState(Math.max(0, Math.min(1, next))),
       applyAppearance: () => {
         setAppliedDarkness(draftDarkness);
+        // Written on apply rather than on drag: the draft is a preview, and
+        // saving every frame of a slider would write hundreds of times.
+        void saveDarkness(draftDarkness);
       },
     }),
     [appliedDarkness, draftDarkness, palette],
