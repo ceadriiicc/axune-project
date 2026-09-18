@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "try:threads": "tsx scripts/tryThreads.ts",
-    "try:pairing": "tsx scripts/tryPairing.ts"
+    "try:pairing": "tsx scripts/tryPairing.ts",
+    "try:verification": "tsx scripts/tryVerification.ts"
   },
   "dependencies": {
     "@axune/protocol": "file:../../packages/protocol",

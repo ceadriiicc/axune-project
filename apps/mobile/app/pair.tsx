@@ -2,11 +2,13 @@ import { fingerprint, fromBase64Url } from '@axune/secure-channel';
 import type { PairingPayload } from '@axune/protocol';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { TopBar } from '@/components/ui/TopBar';
 import { type Palette, radius, spacing } from '@/constants/theme';
+import { phoneRandom } from '@/lib/random';
+import { withDecoys } from '@/lib/verificationCodes';
 import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
@@ -132,12 +134,20 @@ export default function PairScreen() {
 /**
  * The last step before this phone trusts a machine.
  *
- * The verification code is derived from the public key in the QR, and the
- * desktop prints the same code beside the QR it is showing. Comparing them is
- * what makes this worth a tap: it is checked against the desktop's own screen,
- * which is the one surface an attacker on the network cannot repaint. A code
- * shown only here would prove nothing, because anything that produced the QR
- * also produced the code derived from it.
+ * Three codes, one of which is real, and you tap the one your desktop is
+ * showing. The first version of this screen displayed the real code alone with
+ * "pair only if they match" underneath, and the honest result was that it got
+ * tapped straight through without anyone looking at the desktop at all - a
+ * security check presented as decoration, which is worse than no check, because
+ * it looks like protection that is not happening.
+ *
+ * Choosing between three cannot be done without reading the desktop's screen,
+ * and that screen is the one surface an attacker on the network cannot repaint.
+ * A code shown only here would prove nothing either way, since whatever
+ * produced the QR also produced the code derived from it.
+ *
+ * Pairing happens once per device, so the cost of getting this right is a few
+ * seconds, once.
  */
 function Confirm({
   payload,
@@ -151,17 +161,42 @@ function Confirm({
   const router = useRouter();
   const { palette: color } = useTheme();
   const styles = makeStyles(color);
+  const [wrong, setWrong] = useState(false);
 
   // The key was checked for presence before this screen was reached, but a
   // malformed one must not take the app down mid-pairing.
-  let code: string | null = null;
-  try {
-    code = fingerprint(fromBase64Url(payload.publicKey));
-  } catch {
-    code = null;
-  }
+  const real = useMemo(() => {
+    try {
+      return fingerprint(fromBase64Url(payload.publicKey));
+    } catch {
+      return null;
+    }
+  }, [payload.publicKey]);
+
+  // Decoys are drawn once and kept, so the options do not reshuffle underneath
+  // someone who is mid-comparison.
+  const choices = useMemo(() => (real ? withDecoys(real, phoneRandom) : []), [real]);
 
   const address = payload.urls?.[0] ?? payload.url;
+
+  if (!real) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <TopBar title="Confirm desktop" onBack={() => router.back()} />
+        <ScrollView contentContainerStyle={styles.confirmBody}>
+          <Text style={styles.eyebrow}>CANNOT VERIFY</Text>
+          <Text style={styles.project}>{payload.projectName}</Text>
+          <Text style={styles.codeHelp}>
+            This pairing code could not be read, so there is nothing to check it against. Show a
+            fresh code on your desktop rather than pairing with this one.
+          </Text>
+          <Pressable style={styles.secondary} onPress={onReject}>
+            <Text style={styles.secondaryText}>Back to the camera</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -173,36 +208,34 @@ function Confirm({
           {address}
         </Text>
 
-        {code ? (
-          <View style={styles.codeCard}>
-            <Text style={styles.codeLabel}>Verification code</Text>
-            <Text style={styles.code}>{code}</Text>
-            <Text style={styles.codeHelp}>
-              Your desktop is showing this same code next to the QR. Pair only if they match.
+        <Text style={styles.instruction}>
+          Your desktop is showing one of these. Tap the one you can see.
+        </Text>
+
+        {choices.map((choice) => (
+          <Pressable
+            key={choice}
+            style={styles.choice}
+            onPress={() => (choice === real ? onConfirm() : setWrong(true))}
+          >
+            <Text style={styles.choiceText}>{choice}</Text>
+          </Pressable>
+        ))}
+
+        {wrong ? (
+          <View style={styles.warning}>
+            <Text style={styles.warningTitle}>That code is not on your desktop.</Text>
+            <Text style={styles.warningBody}>
+              Either it was a mis-tap, or this QR code did not come from the machine you think it
+              did. Check your desktop screen before trying again.
             </Text>
           </View>
         ) : (
-          <View style={styles.codeCard}>
-            <Text style={styles.codeLabel}>Verification code</Text>
-            <Text style={styles.codeBad}>unreadable</Text>
-            <Text style={styles.codeHelp}>
-              This code could not be read, so there is nothing to compare. Show a fresh code on
-              your desktop rather than pairing with this one.
-            </Text>
-          </View>
+          <Text style={styles.reassure}>
+            Nothing has been sent yet. Axune connects only after you choose.
+          </Text>
         )}
 
-        <Text style={styles.reassure}>
-          Nothing has been sent yet. Axune connects only after you confirm.
-        </Text>
-
-        <Pressable
-          style={[styles.button, !code && styles.buttonDisabled]}
-          onPress={onConfirm}
-          disabled={!code}
-        >
-          <Text style={styles.buttonText}>Trust and connect</Text>
-        </Pressable>
         <Pressable style={styles.secondary} onPress={onReject}>
           <Text style={styles.secondaryText}>This is not my desktop</Text>
         </Pressable>
@@ -313,6 +346,35 @@ const makeStyles = (color: Palette) =>
       textAlign: 'center',
       marginTop: spacing.sm,
     },
+    instruction: {
+      color: color.text,
+      fontSize: 15,
+      lineHeight: 22,
+      marginTop: spacing.lg,
+      marginBottom: spacing.xs,
+    },
+    // Wide, tall, and evenly weighted: none of the three may look more like the
+    // answer than the others, or the eye picks one without reading the desktop.
+    choice: {
+      height: 62,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: color.line,
+      backgroundColor: color.panel,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: spacing.sm,
+    },
+    choiceText: { color: color.text, fontSize: 24, fontWeight: '700', letterSpacing: 3 },
+    warning: {
+      marginTop: spacing.lg,
+      padding: spacing.md,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: color.danger,
+    },
+    warningTitle: { color: color.danger, fontSize: 15, fontWeight: '700' },
+    warningBody: { color: color.textMuted, fontSize: 13, lineHeight: 19, marginTop: spacing.xs },
     reassure: {
       color: color.textSoft,
       fontSize: 12,
