@@ -21,6 +21,7 @@ import { AxuneServer } from './core/AxuneServer';
 import { DeviceIdentity } from './core/DeviceIdentity';
 import { PairingManager, lanAddress } from './core/PairingManager';
 import { listenOnKnownPort } from './core/port';
+import { SessionStore } from './core/SessionStore';
 import { FakePhone } from './testing/FakePhone';
 import { fingerprint, fromBase64Url } from '@axune/secure-channel';
 
@@ -35,7 +36,13 @@ async function main() {
     path: REPO,
     branch: 'main',
     isGitRepo: true,
-  });
+  },
+    // Throwaway state, so a test never writes to the real desktop's trusted
+    // devices. This used to use the defaults, and every run left a live
+    // session token on the machine.
+    new SessionStore(join(tmpdir(), `axune-transport-${Date.now()}.json`)),
+    new DeviceIdentity(join(tmpdir(), `axune-transport-identity-${Date.now()}.json`)),
+  );
 
   // The well-known port, so a phone already paired with this machine can
   // join the harness without rescanning a QR code.

@@ -10,14 +10,18 @@
  */
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ServerMessage } from '@axune/protocol';
 import { WebSocket } from 'ws';
 
 import { AxuneServer } from './core/AxuneServer';
+import { DeviceIdentity } from './core/DeviceIdentity';
 import { PairingManager } from './core/PairingManager';
 import { listenOnKnownPort } from './core/port';
+import { SessionStore } from './core/SessionStore';
 import { FakePhone } from './testing/FakePhone';
 
 const execFileAsync = promisify(execFile);
@@ -35,7 +39,13 @@ async function main() {
     path: REPO,
     branch: beforeBranch,
     isGitRepo: true,
-  });
+  },
+    // Throwaway state, so a test never writes to the real desktop's trusted
+    // devices. This used to use the defaults, and every run left a live
+    // session token on the machine.
+    new SessionStore(join(tmpdir(), `axune-write-${Date.now()}.json`)),
+    new DeviceIdentity(join(tmpdir(), `axune-write-identity-${Date.now()}.json`)),
+  );
 
   // The well-known port, so a phone already paired with this machine can
   // join the harness without rescanning a QR code.
