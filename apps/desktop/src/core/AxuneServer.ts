@@ -487,6 +487,18 @@ export class AxuneServer {
     this.running.set(message.runId, run);
     void run.done
       .then(async (handle) => {
+        // First, before any await and before anything else here.
+        //
+        // A follow-up prompt reads this to resume the conversation, and the
+        // phone can send one the instant it sees run_finished - which the
+        // adapter emits as soon as the run ends, long before this handler was
+        // reaching its last statement. Persisting it behind reportChanges and
+        // projectNow meant a prompt sent promptly read an empty store and
+        // started a fresh conversation, losing everything said before it.
+        if (handle.providerSessionId) {
+          this.store.rememberProviderSession(message.sessionId, agentId, handle.providerSessionId);
+        }
+
         const kind =
           handle.outcome === 'completed'
             ? 'run.completed'
@@ -506,13 +518,6 @@ export class AxuneServer {
         // A run often changes the working tree; tell the phone what it looks
         // like now rather than leaving a stale snapshot on screen.
         this.broadcast({ type: 'project_changed', project: await this.projectNow() });
-        if (handle.providerSessionId) {
-          this.store.rememberProviderSession(
-            message.sessionId,
-            agentId,
-            handle.providerSessionId,
-          );
-        }
       })
       .finally(() => this.running.delete(message.runId));
   }
