@@ -18,11 +18,35 @@ import { PROTOCOL_VERSION, type PairingPayload } from '@axune/protocol';
 export class PairingManager {
   private current: IssuedToken | null = null;
   private readonly paired = new Map<string, PairedDevice>();
+  /**
+   * The desktop's public key, as it will appear in the QR. Supplied by
+   * AxuneServer, which owns the identity.
+   */
+  private desktopPublicKey: string | null = null;
 
   constructor(private readonly ttlMs = 2 * 60 * 1000) {}
 
+  /**
+   * Tell the manager which key to advertise in the QR.
+   *
+   * Deliberately not a parameter of `issue`. Threading it through every
+   * call site means the next call site added forgets it, and the symptom of
+   * forgetting would be a QR that pairs an *unauthenticated* link - a
+   * silent downgrade, which is the failure mode this whole handshake exists
+   * to prevent. Set once by the server, and `issue` refuses without it.
+   */
+  useIdentity(publicKey: string): void {
+    this.desktopPublicKey = publicKey;
+  }
+
   /** Mint a fresh token, invalidating any previous unused one. */
   issue(port: number, projectName: string): PairingPayload {
+    if (!this.desktopPublicKey) {
+      // Loud rather than silent. A payload without a key would still pair,
+      // and the link would still be encrypted - but against whoever
+      // answered, with nothing pinning the desktop's identity.
+      throw new Error('PairingManager has no desktop public key; refusing to issue a QR');
+    }
     const token = randomBytes(32).toString('base64url');
     const expiresAt = Date.now() + this.ttlMs;
     this.current = { token, expiresAt, consumed: false };
@@ -35,6 +59,7 @@ export class PairingManager {
       token,
       expiresAt,
       projectName,
+      publicKey: this.desktopPublicKey,
     };
   }
 

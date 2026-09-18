@@ -70,6 +70,15 @@ async function main() {
       console.log(qr.replace(/^/gm, '  '));
       const minutes = Math.round((payload.expiresAt - Date.now()) / 60_000);
       console.log(`  code expires in ${minutes} minutes, single use`);
+      console.log(``);
+      // Printed here so there is something trustworthy to compare against.
+      // The phone derives the same code from the key inside the QR and shows
+      // it before it trusts anything. A code shown only on the phone would
+      // prove nothing, because whatever produced the QR also produced the
+      // code derived from it - this screen is the surface an attacker on the
+      // network cannot repaint.
+      console.log(`  verification code: ${server.identity.fingerprint}`);
+      console.log('  your phone should show the same code before it connects');
       console.log('');
       console.log('  Waiting for a phone...  (Ctrl+C to stop)');
       console.log('');

@@ -19,10 +19,15 @@ import {
   type ClientMessage,
   type ProjectSummary,
   type ServerMessage,
+  type ClientHello,
+  type SealedFrame,
+  type ServerHello,
 } from '@axune/protocol';
+import { SecureChannel, fromBase64Url } from '@axune/secure-channel';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { ActivityLog } from './ActivityLog';
+import { DeviceIdentity, nodeRandom } from './DeviceIdentity';
 import { EgressLedger } from './EgressLedger';
 import { GitWatcher } from './GitWatcher';
 import { readGitSnapshot } from './gitSnapshot';
@@ -60,6 +65,12 @@ export class AxuneServer {
   private readonly running = new Map<string, RunningRun>();
   /** Sockets that have completed pairing, with their session token. */
   private readonly authed = new WeakMap<WebSocket, string>();
+  /**
+   * The encrypted channel for each socket, established by the handshake
+   * before anything else is accepted. A socket absent from this map has not
+   * proved it holds the key the QR pinned, so it is entitled to nothing.
+   */
+  private readonly channels = new WeakMap<WebSocket, SecureChannel>();
   /** Observers for the local UI — the terminal now, the Electron window later. */
   private readonly eventListeners = new Set<(event: AgentEvent) => void>();
   private readonly connectionListeners = new Set<(state: string) => void>();
@@ -89,7 +100,15 @@ export class AxuneServer {
     readonly pairing: PairingManager,
     private project: ProjectSummary,
     private readonly store: SessionStore = new SessionStore(),
+    /**
+     * This machine's long-term key. The public half travels in the QR code
+     * and is pinned by every phone that pairs, so it must outlive restarts.
+     */
+    readonly identity: DeviceIdentity = new DeviceIdentity(),
   ) {
+    // The QR advertises this machine's public key, so the pairing manager
+    // needs it before it can issue one.
+    this.pairing.useIdentity(this.identity.publicKeyEncoded);
     // Devices trusted in an earlier run of the desktop are still trusted, so a
     // restart does not force the phone to rescan a QR code.
     for (const token of this.store.trustedTokens()) this.pairing.trust(token);
@@ -203,14 +222,87 @@ export class AxuneServer {
       }
     });
     socket.on('message', (raw) => {
+      const channel = this.channels.get(socket);
+      // No channel yet means this must be the handshake. It is the only
+      // frame the desktop will ever read in the clear.
+      if (!channel) return this.onHello(socket, String(raw));
+
       let message: ClientMessage;
       try {
-        message = JSON.parse(String(raw)) as ClientMessage;
+        const frame = JSON.parse(String(raw)) as SealedFrame;
+        if (frame?.type !== 'sealed') {
+          // Plaintext after the handshake is refused rather than tolerated.
+          // A peer that may fall back to clear text is a peer an attacker
+          // will ask to fall back, so there is no path back down from here.
+          return this.reject(socket, 'unencrypted', 'this link is encrypted');
+        }
+        message = JSON.parse(channel.open(frame.envelope)) as ClientMessage;
       } catch {
-        return; // Unparseable input from an unpaired socket is simply ignored.
+        // open() throws on a forged tag, a replayed counter, or a peer
+        // holding the wrong key. None are recoverable, and none deserve a
+        // reply that would tell an attacker which one it was.
+        socket.close();
+        return;
       }
       void this.handle(socket, message);
     });
+  }
+
+  /**
+   * Agree a key with a phone, or refuse it.
+   *
+   * The phone has already pinned this desktop's public key - from the QR
+   * when pairing, from its own storage when reconnecting - so it supplies
+   * only its own ephemeral public half and a fresh salt.
+   *
+   * If it pinned the wrong key nothing fails here: the handshake completes
+   * and the first sealed frame fails to open. That is deliberate. Refusing
+   * at this point would tell someone probing the port whether the key was
+   * the part they got wrong.
+   */
+  private onHello(socket: WebSocket, raw: string): void {
+    let hello: ClientHello;
+    try {
+      hello = JSON.parse(raw) as ClientHello;
+    } catch {
+      return this.reject(socket, 'malformed', 'expected a hello');
+    }
+
+    if (hello?.type !== 'hello') return this.reject(socket, 'malformed', 'expected a hello');
+    if (hello.protocolVersion !== PROTOCOL_VERSION) {
+      return this.reject(socket, 'version_mismatch', 'desktop speaks v' + PROTOCOL_VERSION);
+    }
+
+    let theirKey: Uint8Array;
+    try {
+      theirKey = fromBase64Url(hello.publicKey);
+    } catch {
+      return this.reject(socket, 'malformed', 'unreadable public key');
+    }
+
+    // A short or missing salt would let two connections derive the same
+    // keys. Sixteen bytes is twenty-two base64url characters.
+    if (theirKey.length !== 32 || typeof hello.salt !== 'string' || hello.salt.length < 22) {
+      return this.reject(socket, 'malformed', 'unusable handshake');
+    }
+
+    this.channels.set(
+      socket,
+      new SecureChannel('desktop', this.identity.privateKey, theirKey, hello.salt, nodeRandom),
+    );
+    socket.send(JSON.stringify({ type: 'hello_ok' } satisfies ServerHello));
+  }
+
+  /** Refuse a handshake in the clear, then close. Nothing else is sent unsealed. */
+  private reject(
+    socket: WebSocket,
+    reason: 'version_mismatch' | 'malformed' | 'unencrypted',
+    detail: string,
+  ): void {
+    if (socket.readyState === socket.OPEN) {
+      socket.send(JSON.stringify({ type: 'hello_rejected', reason, detail } satisfies ServerHello));
+    }
+    socket.close();
   }
 
   private async handle(socket: WebSocket, message: ClientMessage): Promise<void> {
@@ -556,7 +648,18 @@ export class AxuneServer {
   }
 
   private send(socket: WebSocket, message: ServerMessage): void {
-    if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+    if (socket.readyState !== socket.OPEN) return;
+    const channel = this.channels.get(socket);
+    // A socket without a channel has not completed the handshake. Rather
+    // than falling back to plaintext it receives nothing at all: there is no
+    // message worth sending to a peer whose identity was never established.
+    if (!channel) return;
+    socket.send(
+      JSON.stringify({
+        type: 'sealed',
+        envelope: channel.seal(JSON.stringify(message)),
+      } satisfies SealedFrame),
+    );
   }
 
   private broadcast(message: ServerMessage): void {

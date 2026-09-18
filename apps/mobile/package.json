@@ -13,8 +13,12 @@
   },
   "dependencies": {
     "@axune/protocol": "file:../../packages/protocol",
+    "@axune/secure-channel": "file:../../packages/secure-channel",
     "@axune/shared": "file:../../packages/shared",
     "@expo/vector-icons": "^15.0.2",
+    "@noble/ciphers": "^1.2.1",
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.1",
     "expo": "^57.0.0",
     "expo-asset": "~57.0.16",
     "expo-camera": "~57.0.4",

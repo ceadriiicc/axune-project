@@ -238,4 +238,80 @@ export interface PairingPayload {
   /** Epoch ms after which the desktop will refuse this token. */
   expiresAt: number;
   projectName: string;
+  /**
+   * The desktop's long-term X25519 public key, base64url.
+   *
+   * This is what makes the link authenticated rather than merely encrypted. The
+   * QR is an out-of-band channel: an attacker on the network can see and alter
+   * packets but cannot alter the pixels on the monitor, so a key read from here
+   * is one they cannot substitute. Plain Diffie-Hellman without it agrees a
+   * sound key with whoever answers - which on a hostile network is the attacker.
+   *
+   * The phone stores it and pins it for every later reconnect, when there is no
+   * QR to read.
+   */
+  publicKey: string;
 }
+
+/**
+ * The handshake, and the only two frames that ever travel in the clear.
+ *
+ * Everything else - including the pairing token, which used to cross the LAN in
+ * plaintext - is carried inside a `SealedFrame`. There is deliberately **no
+ * downgrade path**: a desktop that receives an unsealed `pair` after the
+ * handshake closes the socket. Encryption a peer is allowed to skip is
+ * encryption an attacker will ask it to skip, and "it still works on old
+ * phones" is the sentence that ends every transport security story badly.
+ */
+export interface ClientHello {
+  type: 'hello';
+  protocolVersion: number;
+  /**
+   * The phone's X25519 public key, base64url. Ephemeral: a fresh pair per
+   * connection, so a key recovered later cannot decrypt traffic captured today.
+   * Public by definition, so sending it in the clear costs nothing.
+   */
+  publicKey: string;
+  /**
+   * Per-connection HKDF salt, base64url, chosen by the phone.
+   *
+   * Non-secret on purpose - HKDF salts are not required to be secret, only
+   * unique - which is what lets the token move *inside* the encrypted channel.
+   * An earlier design used the pairing token as the salt and could not: the
+   * desktop would have had to know the token to derive the keys it needed in
+   * order to decrypt the message carrying the token.
+   */
+  salt: string;
+}
+
+/** Desktop → Phone, in the clear, answering a hello. */
+export type ServerHello =
+  | { type: 'hello_ok' }
+  | {
+      type: 'hello_rejected';
+      reason: 'version_mismatch' | 'malformed' | 'unencrypted';
+      detail: string;
+    };
+
+/**
+ * One encrypted frame. Structurally identical to the secure-channel package's
+ * `Envelope`, and repeated here rather than imported so that `@axune/protocol`
+ * - which every part of Axune depends on - does not drag a crypto library into
+ * every consumer. The two are checked against each other by the handshake test.
+ */
+export interface SealedEnvelope {
+  /** Message counter, authenticated, strictly increasing per direction. */
+  n: number;
+  /** Base64url nonce, 24 bytes. */
+  iv: string;
+  /** Base64url ciphertext including the Poly1305 tag. */
+  c: string;
+}
+
+export interface SealedFrame {
+  type: 'sealed';
+  envelope: SealedEnvelope;
+}
+
+/** What actually appears on the wire, in either direction. */
+export type WireFrame = ClientHello | ServerHello | SealedFrame;

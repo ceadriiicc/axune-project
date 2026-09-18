@@ -11,13 +11,18 @@
  *   4. a reconnect replays exactly what was missed, by seq
  */
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { ServerMessage } from '@axune/protocol';
 import { WebSocket } from 'ws';
 
 import { AxuneServer } from './core/AxuneServer';
+import { DeviceIdentity } from './core/DeviceIdentity';
 import { PairingManager, lanAddress } from './core/PairingManager';
 import { listenOnKnownPort } from './core/port';
+import { FakePhone } from './testing/FakePhone';
+import { fingerprint, fromBase64Url } from '@axune/secure-channel';
 
 const REPO = process.argv[2] ?? 'C:/dev/axune';
 const PROMPT =
@@ -43,8 +48,32 @@ async function main() {
   console.log(`qr token : ${payload.token.slice(0, 12)}…  (expires in 2 min)\n`);
 
   // 1 — an unpaired socket must be inert.
+  await check('the code on screen is the code the phone will show', async () => {
+    // The verification step is only worth a tap if both ends derive the same
+    // code from the same key. If they ever disagreed, the screen would be
+    // teaching people to ignore a mismatch - which is worse than showing no
+    // code at all, because it trains away the one check that catches a
+    // substituted desktop.
+    const onScreen = server.identity.fingerprint;
+    // Exactly what the phone does with the payload it scans.
+    const onPhone = fingerprint(fromBase64Url(payload.publicKey));
+    if (onScreen !== onPhone) {
+      return `MISMATCH: desktop prints ${onScreen}, phone derives ${onPhone}`;
+    }
+    if (!/^[0-9A-F]{5} [0-9A-F]{5}$/.test(onPhone)) {
+      return `MISMATCH: ${onPhone} is not a shape anyone can compare at a glance`;
+    }
+    // And a different machine must not land on the same code, or comparing
+    // them would be theatre.
+    const other = new DeviceIdentity(join(tmpdir(), `axune-fp-${Date.now()}.json`));
+    if (other.fingerprint === onPhone) {
+      return 'MISMATCH: a different identity produced the same code';
+    }
+    return `${onPhone} on both, and a different machine shows ${other.fingerprint}`;
+  });
+
   await check('unpaired socket is ignored', async () => {
-    const sock = await connect(port);
+    const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'start_run', runId: 'x', sessionId: 'x', prompt: 'hi', agentIds: [], mode: 'independent' }));
     const reply = await waitFor(sock, [], 800);
     sock.close();
@@ -53,7 +82,7 @@ async function main() {
 
   // 2 — a bad token is refused.
   await check('bad token rejected', async () => {
-    const sock = await connect(port);
+    const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'pair', token: 'wrong', deviceName: 'fake', protocolVersion: 1 }));
     const reply = await waitFor(sock, ['pair_rejected', 'paired'], 5000);
     sock.close();
@@ -61,7 +90,7 @@ async function main() {
   });
 
   // 3 — the real token pairs.
-  const phone = await connect(port);
+  const phone = await connect(port, server.identity.publicKeyEncoded);
   let sessionToken = '';
   await check('valid token pairs', async () => {
     phone.send(JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'iPhone (fake)', protocolVersion: 1 }));
@@ -74,7 +103,7 @@ async function main() {
 
   // 4 — the same token cannot be used twice.
   await check('token cannot be reused', async () => {
-    const sock = await connect(port);
+    const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'pair', token: payload.token, deviceName: 'attacker', protocolVersion: 1 }));
     const reply = await waitFor(sock, ['pair_rejected', 'paired'], 5000);
     sock.close();
@@ -123,7 +152,7 @@ async function main() {
   // 6 — reconnect and replay only what was missed.
   const cutoff = Math.floor(Math.max(...seen) / 2);
   await check(`reconnect replays events after seq ${cutoff}`, async () => {
-    const reconnected = await connect(port);
+    const reconnected = await connect(port, server.identity.publicKeyEncoded);
     reconnected.send(JSON.stringify({ type: 'resume', token: sessionToken || 'unknown', runId, lastSeq: cutoff }));
     const first = await waitFor(reconnected, ['resumed', 'pair_rejected'], 5000);
     reconnected.close();
@@ -150,12 +179,14 @@ async function check(label: string, fn: () => Promise<string>): Promise<void> {
   }
 }
 
-function connect(port: number): Promise<WebSocket> {
-  const sock = new WebSocket(`ws://127.0.0.1:${port}`);
-  return new Promise((resolve, reject) => {
-    sock.once('open', () => resolve(sock));
-    sock.once('error', reject);
-  });
+/**
+ * Open a connection that speaks the real encrypted protocol.
+ *
+ * The desktop refuses plaintext outright, so a raw socket here would simply
+ * be closed on. `desktopPublicKey` is whatever the QR would have carried.
+ */
+function connect(port: number, desktopPublicKey: string): Promise<FakePhone> {
+  return FakePhone.connect(port, desktopPublicKey);
 }
 
 /**
@@ -170,7 +201,7 @@ function connect(port: number): Promise<WebSocket> {
  * silence.
  */
 function waitFor(
-  sock: WebSocket,
+  sock: FakePhone,
   types: readonly string[],
   timeoutMs: number,
 ): Promise<ServerMessage | null> {
