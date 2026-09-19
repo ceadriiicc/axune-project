@@ -11,7 +11,8 @@
     "try:threads": "tsx scripts/tryThreads.ts",
     "try:pairing": "tsx scripts/tryPairing.ts",
     "try:verification": "tsx scripts/tryVerification.ts",
-    "try:appearance": "tsx scripts/tryAppearance.ts"
+    "try:appearance": "tsx scripts/tryAppearance.ts",
+    "try:palette": "tsx scripts/tryPalette.ts"
   },
   "dependencies": {
     "@axune/protocol": "file:../../packages/protocol",
