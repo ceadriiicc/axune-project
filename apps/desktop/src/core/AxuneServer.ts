@@ -111,7 +111,7 @@ export class AxuneServer {
     this.pairing.useIdentity(this.identity.publicKeyEncoded);
     // Devices trusted in an earlier run of the desktop are still trusted, so a
     // restart does not force the phone to rescan a QR code.
-    for (const token of this.store.trustedTokens()) this.pairing.trust(token);
+    for (const key of this.store.trustedKeys()) this.pairing.trustKey(key);
   }
 
   async start(port: number): Promise<number> {

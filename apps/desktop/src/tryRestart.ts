@@ -214,11 +214,14 @@ async function main() {
     writeFileSync(crowded, JSON.stringify({ devices, providerSessions: {} }));
 
     const store = new SessionStore(crowded);
-    const kept = store.trustedTokens();
+    const kept = store.trustedKeys();
     if (kept.length >= 25) return `FAIL: all ${kept.length} tokens kept`;
+    // Devices are keyed by a hash now, so the raw tokens the fixture wrote are
+    // no longer what the store reports. Asking `isTrusted` instead keeps the
+    // check about which phone survived rather than about storage shape.
     // Sorted newest-first, so token-0 is the most recent and must survive.
-    if (!kept.includes('token-0')) return 'FAIL: dropped the most recently used device';
-    if (kept.includes('token-24')) return 'FAIL: kept the least recently used device';
+    if (!store.isTrusted('token-0')) return 'FAIL: dropped the most recently used device';
+    if (store.isTrusted('token-24')) return 'FAIL: kept the least recently used device';
     return `25 tokens reduced to ${kept.length}, most recent retained`;
   });
 

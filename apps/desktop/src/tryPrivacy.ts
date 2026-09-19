@@ -18,7 +18,7 @@ import type { AgentEvent } from '@axune/protocol';
 
 import { ActivityLog } from './core/ActivityLog';
 import { EgressLedger } from './core/EgressLedger';
-import { SessionStore } from './core/SessionStore';
+import { SessionStore, deviceKey } from './core/SessionStore';
 
 const scratch = mkdtempSync(join(tmpdir(), 'axune-privacy-'));
 const ledgerFile = join(scratch, 'egress.json');
@@ -186,6 +186,73 @@ check('an old provider session expires', () => {
     : 'FAIL: kept indefinitely';
 });
 
+// ---- tokens at rest ------------------------------------------------------
+
+check('a stored device yields no usable token', () => {
+  // The breach attempt, not an inspection: read the file the way anything
+  // running as this user could, and look for the credential in it. Until this
+  // change the token *was* the key of the devices map, so it sat in plain text
+  // on disk granting full control of the machine to whatever found it.
+  const file = join(scratch, 'store-hashed.json');
+  const token = 'a-session-token-that-grants-control';
+  const store = new SessionStore(file);
+  store.trustDevice(token, 'iPhone');
+
+  const onDisk = readFileSync(file, 'utf8');
+  if (onDisk.includes(token)) return 'FAIL: the raw token is sitting in the file';
+  if (!onDisk.includes(deviceKey(token))) return 'FAIL: the device was not stored under its hash';
+
+  // And the desktop must still recognise the phone that presents it.
+  if (!store.isTrusted(token)) return 'FAIL: a trusted device stopped being recognised';
+  if (store.deviceName(token) !== 'iPhone') return 'FAIL: the device name was lost';
+  return 'the token is absent from disk and the device is still recognised';
+});
+
+check('a store written before hashing upgrades itself', () => {
+  // An older file keyed devices by the raw token. It must migrate in place
+  // rather than silently dropping the pairing, which would cost a re-pair and
+  // look like data loss.
+  const file = join(scratch, 'store-legacy.json');
+  const token = 'legacy-session-token';
+  writeFileSync(
+    file,
+    JSON.stringify({
+      devices: { [token]: { deviceName: 'Old iPhone', pairedAt: Date.now(), lastSeenAt: Date.now() } },
+      providerSessions: {},
+    }),
+  );
+
+  const store = new SessionStore(file);
+  if (!store.isTrusted(token)) return 'FAIL: the migrated device is no longer recognised';
+
+  store.trustDevice('another', 'iPad'); // force a save so the upgrade lands on disk
+  const onDisk = readFileSync(file, 'utf8');
+  if (onDisk.includes(token)) return 'FAIL: the legacy raw token survived the upgrade';
+  return 'the legacy pairing still works and its token is gone from disk';
+});
+
+check('one device can be revoked without touching the others', () => {
+  // The gap before this: expire after thirty days, or forget everything. A
+  // lost phone holds a live token until one of those happens, and nobody
+  // re-pairs every other device to deal with it.
+  const file = join(scratch, 'store-revoke.json');
+  const store = new SessionStore(file);
+  store.trustDevice('keep-me', 'iPhone');
+  store.trustDevice('lost-phone', 'Old iPad');
+
+  const lost = store.devices().find((d) => d.name === 'Old iPad');
+  if (!lost) return 'FAIL: the device list did not report it';
+  if (!store.forgetDevice(lost.key)) return 'FAIL: revoking reported failure';
+
+  if (store.isTrusted('lost-phone')) return 'FAIL: the revoked device is still trusted';
+  if (!store.isTrusted('keep-me')) return 'FAIL: revoking one took another with it';
+  if (store.forgetDevice(lost.key)) return 'FAIL: revoking twice reported success';
+
+  const reopened = new SessionStore(file);
+  if (reopened.isTrusted('lost-phone')) return 'FAIL: the revoked device came back after a restart';
+  return 'the lost device is gone, the other survived, and it stayed gone';
+});
+
 // ---- the wipe -----------------------------------------------------------
 
 check('forgetting everything removes it all, and says what went', () => {
@@ -198,12 +265,12 @@ check('forgetting everything removes it all, and says what went', () => {
   const removed = store.forgetEverything();
   if (removed.devices !== 2) return `FAIL: reported ${removed.devices} devices, expected 2`;
   if (removed.providerSessions !== 1) return `FAIL: reported ${removed.providerSessions} sessions`;
-  if (store.trustedTokens().length !== 0) return 'FAIL: a device survived the wipe';
+  if (store.trustedKeys().length !== 0) return 'FAIL: a device survived the wipe';
   if (store.providerSession('sess', 'claude-code')) return 'FAIL: a session survived the wipe';
 
   // And it must stay gone across a restart, not merely be cleared in memory.
   const reopened = new SessionStore(file);
-  if (reopened.trustedTokens().length !== 0) return 'FAIL: devices came back after a restart';
+  if (reopened.trustedKeys().length !== 0) return 'FAIL: devices came back after a restart';
   return `reported ${removed.devices} devices and ${removed.providerSessions} conversation, and none returned`;
 });
 

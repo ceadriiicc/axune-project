@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -40,7 +41,7 @@ export class SessionStore {
 
   trustDevice(sessionToken: string, deviceName: string): void {
     const now = Date.now();
-    this.state.devices[sessionToken] = { deviceName, pairedAt: now, lastSeenAt: now };
+    this.state.devices[deviceKey(sessionToken)] = { deviceName, pairedAt: now, lastSeenAt: now };
     this.prune();
     this.save();
   }
@@ -50,22 +51,56 @@ export class SessionStore {
    * that actually pairs with this machine and drops the ones that do not.
    */
   touchDevice(sessionToken: string): void {
-    const device = this.state.devices[sessionToken];
+    const device = this.state.devices[deviceKey(sessionToken)];
     if (!device) return;
     device.lastSeenAt = Date.now();
     this.save();
   }
 
   isTrusted(sessionToken: string): boolean {
-    return Boolean(this.state.devices[sessionToken]);
+    return Boolean(this.state.devices[deviceKey(sessionToken)]);
   }
 
-  trustedTokens(): string[] {
+  /**
+   * The stored key of every trusted device - hashes, never the tokens.
+   *
+   * Named for what it returns now. It used to hand back the tokens themselves,
+   * which meant restoring trust on startup moved live credentials around in
+   * memory for no reason.
+   */
+  trustedKeys(): string[] {
     return Object.keys(this.state.devices);
   }
 
   deviceName(sessionToken: string): string | null {
-    return this.state.devices[sessionToken]?.deviceName ?? null;
+    return this.state.devices[deviceKey(sessionToken)]?.deviceName ?? null;
+  }
+
+  /** Every trusted device, for a screen that lists them or revokes one. */
+  devices(): { key: string; name: string; pairedAt: number; lastSeenAt: number }[] {
+    return Object.entries(this.state.devices)
+      .map(([key, d]) => ({
+        key,
+        name: d.deviceName,
+        pairedAt: d.pairedAt,
+        lastSeenAt: d.lastSeenAt ?? d.pairedAt,
+      }))
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  }
+
+  /**
+   * Revoke one device, by the key `devices()` reports.
+   *
+   * The gap this fills: trust could be expired after thirty days or dropped
+   * wholesale, and nothing in between. A lost phone holds a bearer token until
+   * one of those happens, and forgetting every other phone to invalidate it is
+   * a cost people will not pay, so in practice the token stayed live.
+   */
+  forgetDevice(key: string): boolean {
+    if (!this.state.devices[key]) return false;
+    delete this.state.devices[key];
+    this.save();
+    return true;
   }
 
   /** Used by a "forget this phone" action, and to recover from a leaked code. */
@@ -149,7 +184,7 @@ export class SessionStore {
       const raw = readFileSync(this.file, 'utf8');
       const parsed = JSON.parse(raw) as Partial<PersistedState>;
       this.state = {
-        devices: parsed.devices ?? {},
+        devices: migrateDevices(parsed.devices),
         providerSessions: migrateSessions(parsed.providerSessions),
       };
       // Expire on startup rather than only when something new is stored, so a
@@ -223,4 +258,38 @@ function defaultPath(): string {
   const base =
     process.env.LOCALAPPDATA ?? process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
   return join(base, 'Axune', 'desktop-state.json');
+}
+
+/**
+ * How a device is identified on disk: the SHA-256 of its session token, never
+ * the token itself.
+ *
+ * The store used to key devices by the raw token, so the file held a live
+ * bearer credential for every paired phone - each one granting full control of
+ * this machine to anything running as the user. The desktop only ever needs to
+ * *recognise* a token presented to it, never to produce one, so there is no
+ * reason to keep something usable.
+ *
+ * No salt and no KDF, deliberately: these are 32 bytes from randomBytes, not a
+ * password. There is no dictionary to run, and nothing an expensive hash would
+ * buy that the entropy does not already provide.
+ */
+export function deviceKey(sessionToken: string): string {
+  return createHash('sha256').update(sessionToken).digest('hex');
+}
+
+/**
+ * Upgrade a store written before devices were hashed.
+ *
+ * A key that is already 64 hex characters is a hash; anything else is a raw
+ * token from an older file and is hashed in place. The phone is unaffected -
+ * it presents the same token either way - so this costs nobody a re-pair.
+ */
+function migrateDevices(stored: PersistedState['devices'] | undefined): PersistedState['devices'] {
+  if (!stored) return {};
+  const migrated: PersistedState['devices'] = {};
+  for (const [key, device] of Object.entries(stored)) {
+    migrated[/^[0-9a-f]{64}$/.test(key) ? key : deviceKey(key)] = device;
+  }
+  return migrated;
 }

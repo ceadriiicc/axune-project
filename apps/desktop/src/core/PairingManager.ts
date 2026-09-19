@@ -3,6 +3,8 @@ import { hostname, networkInterfaces } from 'node:os';
 
 import { PROTOCOL_VERSION, type PairingPayload } from '@axune/protocol';
 
+import { deviceKey } from './SessionStore';
+
 /**
  * Issues the short-lived credential a phone presents to pair.
  *
@@ -95,13 +97,24 @@ export class PairingManager {
    * does not invalidate a phone that already paired.
    */
   trust(sessionToken: string, deviceName = 'known device'): void {
-    this.paired.set(sessionToken, { deviceName, pairedAt: Date.now() });
+    this.paired.set(deviceKey(sessionToken), { deviceName, pairedAt: Date.now() });
+  }
+
+  /**
+   * Restore a device from its stored key, which is already a hash.
+   *
+   * Used on startup, where the raw token no longer exists anywhere - that is
+   * the point of storing hashes.
+   */
+  trustKey(key: string, deviceName = 'known device'): void {
+    this.paired.set(key, { deviceName, pairedAt: Date.now() });
   }
 
   /** Does this token belong to an already-paired device? Used on reconnect. */
   isPaired(sessionToken: string): boolean {
+    const key = deviceKey(sessionToken);
     for (const known of this.paired.keys()) {
-      if (constantTimeEquals(sessionToken, known)) return true;
+      if (constantTimeEquals(key, known)) return true;
     }
     return false;
   }
