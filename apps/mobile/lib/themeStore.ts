@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { parseDarkness } from './darkness';
+import { parseLayout, serializeLayout, type WidgetId } from './homeLayout';
 
 /**
  * Which theme the user picked.
@@ -67,5 +68,33 @@ export async function saveDarkness(amount: number): Promise<void> {
     });
   } catch {
     // As above: the choice holds for this session and is simply forgotten.
+  }
+}
+
+const LAYOUT_KEY = 'axune.home.v1';
+
+/**
+ * Which cards are on Home, and in what order.
+ *
+ * Stored for the same reason the appearance is: an arrangement that resets
+ * every launch is not a setting, it is a toy. Kept beside the theme rather
+ * than with the pairing, because forgetting the desktop should not rearrange
+ * someone's Home.
+ */
+export async function loadHomeLayout(): Promise<WidgetId[]> {
+  try {
+    return parseLayout(await SecureStore.getItemAsync(LAYOUT_KEY));
+  } catch {
+    return parseLayout(null);
+  }
+}
+
+export async function saveHomeLayout(layout: WidgetId[]): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(LAYOUT_KEY, serializeLayout(layout), {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } catch {
+    // The arrangement holds for this session and is simply forgotten.
   }
 }
