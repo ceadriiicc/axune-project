@@ -3,7 +3,14 @@ import { useColorScheme } from 'react-native';
 
 import { color, palettes, type Palette } from '@/constants/theme';
 
-import { loadThemeMode, saveThemeMode, type ThemeMode } from './themeStore';
+import { blendPalette } from './blendPalette';
+import {
+  loadDarkness,
+  loadThemeMode,
+  saveDarkness,
+  saveThemeMode,
+  type ThemeMode,
+} from './themeStore';
 
 /**
  * The palette in force, and the control that changes it.
@@ -42,6 +49,20 @@ export interface ThemeState {
   toggle: () => void;
   /** False until the stored preference has been read, so nothing flashes. */
   ready: boolean;
+
+  /**
+   * How dark the interface is, from 0 (paper) to 1 (black).
+   *
+   * The appearance control is a continuous slider, not a switch, so the theme
+   * exists at every point between the two palettes rather than only at the
+   * ends. `draft` is what the slider is showing; `applied` is what the app is
+   * actually painted with. They differ while someone is dragging, which is why
+   * the control can preview without committing.
+   */
+  draftDarkness: number;
+  appliedDarkness: number;
+  setDraftDarkness: (amount: number) => void;
+  applyAppearance: () => void;
 }
 
 const ThemeContext = createContext<ThemeState | null>(null);
@@ -67,6 +88,46 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const scheme: 'light' | 'dark' =
     mode === 'system' ? (system === 'light' ? 'light' : 'dark') : mode;
 
+  /**
+   * Darkness follows the phone until someone chooses otherwise, and is then
+   * remembered - the rule ThemeMode already states, applied to a number.
+   *
+   * Null means never chosen, which is deliberately not the same as having
+   * chosen zero: one follows the system, the other is paper-white on purpose.
+   */
+  const [chosenDarkness, setChosenDarkness] = useState<number | null>(null);
+  const [draftDarkness, setDraftDarknessState] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadDarkness().then((stored) => {
+      if (cancelled || stored === null) return;
+      setChosenDarkness(stored);
+      setDraftDarknessState(stored);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const systemDarkness = scheme === 'dark' ? 1 : 0;
+  const appliedDarkness = chosenDarkness ?? systemDarkness;
+  const draft = draftDarkness ?? appliedDarkness;
+
+  const setDraftDarkness = useCallback((amount: number) => {
+    setDraftDarknessState(Math.max(0, Math.min(1, amount)));
+  }, []);
+
+  const applyAppearance = useCallback(() => {
+    const next = draftDarkness ?? appliedDarkness;
+    setChosenDarkness(next);
+    // Written on apply rather than on drag: the draft is a preview, and saving
+    // every frame of a slider would write to the keychain hundreds of times.
+    void saveDarkness(next);
+  }, [draftDarkness, appliedDarkness]);
+
+  const palette = useMemo(() => blendPalette(appliedDarkness), [appliedDarkness]);
+
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
     void saveThemeMode(next);
@@ -77,8 +138,30 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [scheme, setMode]);
 
   const value = useMemo<ThemeState>(
-    () => ({ mode, scheme, palette: palettes[scheme], setMode, toggle, ready }),
-    [mode, scheme, setMode, toggle, ready],
+    () => ({
+      mode,
+      scheme,
+      palette,
+      setMode,
+      toggle,
+      ready,
+      draftDarkness: draft,
+      appliedDarkness,
+      setDraftDarkness,
+      applyAppearance,
+    }),
+    [
+      mode,
+      scheme,
+      palette,
+      setMode,
+      toggle,
+      ready,
+      draft,
+      appliedDarkness,
+      setDraftDarkness,
+      applyAppearance,
+    ],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -102,5 +185,9 @@ export function useTheme(): ThemeState {
     setMode: () => undefined,
     toggle: () => undefined,
     ready: true,
+    draftDarkness: 1,
+    appliedDarkness: 1,
+    setDraftDarkness: () => undefined,
+    applyAppearance: () => undefined,
   };
 }

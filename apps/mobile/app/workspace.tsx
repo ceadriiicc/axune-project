@@ -96,7 +96,11 @@ export default function WorkspaceScreen() {
         <View style={styles.header}>
           <View style={styles.flex}>
             <Text style={styles.title} numberOfLines={1}>
-              {project?.name ?? 'Workspace'}
+              {/* "Workspace" was the tab this screen used to live in. There is
+                  no such tab now - it is reached from Sessions and Agents - so
+                  the fallback names what the screen is rather than where it
+                  used to be. */}
+              {project?.name ?? 'Session'}
             </Text>
             <Text style={styles.subtitle} numberOfLines={1}>
               {connected ? (project?.branch ?? '') : 'Not connected'}
@@ -478,14 +482,21 @@ function useStyles() {
       paddingVertical: 8,
       paddingHorizontal: 6,
     },
+    // 44pt, not 38: this is the control every prompt goes through, and it was
+    // under the minimum touch target.
     send: {
-      width: 38,
-      height: 38,
+      width: 44,
+      height: 44,
       borderRadius: radius.sm,
-      backgroundColor: color.codex,
+      // Was color.codex - the Codex brand colour, on the send button of a
+      // screen that runs Claude Code, for an agent that is not even supported.
+      // The same mistake as dressing the desktop's icon in Claude's brown.
+      backgroundColor: color.claude,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    sendIdle: { backgroundColor: 'rgba(255,255,255,0.06)' },
+    // Fixed rather than white-on-any-theme: this is the disabled state, and a
+    // hardcoded white wash disappears entirely on the light end of the slider.
+    sendIdle: { backgroundColor: color.panelAlt },
   });
 }
