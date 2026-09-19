@@ -37,18 +37,31 @@ export default function TabLayout() {
           tabBarIcon: ({ color: c, size }) => <Ionicons name="time" size={size} color={c} />,
         }}
       />
+      {/*
+        Workspace is no longer a tab. It is still the screen a run is started
+        from and is still reached at /workspace - it has simply moved out of
+        this group, because starting work belongs with the agent you are
+        starting it with rather than in a destination of its own. It retires
+        once the session chat can start a run.
+
+        Insights is gone. It held a place for comparing two agents and showed
+        nothing invented while only one exists; a permanent tab reading "not yet
+        possible" spends a quarter of the navigation on something that cannot
+        act. Its promise lives on the Agents page, and comparison earns a tab
+        back when there is a second agent.
+      */}
       <Tabs.Screen
-        name="workspace"
+        name="agents"
         options={{
-          title: 'Workspace',
-          tabBarIcon: ({ color: c, size }) => <Ionicons name="grid" size={size} color={c} />,
+          title: 'Agents',
+          tabBarIcon: ({ color: c, size }) => <Ionicons name="sparkles" size={size} color={c} />,
         }}
       />
       <Tabs.Screen
-        name="insights"
+        name="settings"
         options={{
-          title: 'Insights',
-          tabBarIcon: ({ color: c, size }) => <Ionicons name="git-compare" size={size} color={c} />,
+          title: 'Settings',
+          tabBarIcon: ({ color: c, size }) => <Ionicons name="settings" size={size} color={c} />,
         }}
       />
     </Tabs>

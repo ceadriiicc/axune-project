@@ -10,15 +10,20 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
 /**
- * Every run this device has seen, plus the few settings that are real.
+ * Every run this device has seen.
  *
- * The mockup's toggles — sync prompts, save sessions, theme — are deliberately
- * absent: a switch that controls nothing is worse than no switch, because it
- * teaches people the app lies about what it can do.
+ * The settings that used to sit under this history now have a screen of their
+ * own. They ended up here because nothing else owned them, which is how a
+ * conversation list acquires a theme picker.
+ *
+ * The rule that kept this screen honest still holds wherever it went: the
+ * mockup's toggles — sync prompts, save sessions — stayed absent, because a
+ * switch that controls nothing is worse than no switch. It teaches people the
+ * app lies about what it can do.
  */
 export default function SessionsScreen() {
   const router = useRouter();
-  const { palette: color, mode, setMode } = useTheme();
+  const { palette: color } = useTheme();
   const styles = makeStyles(color);
   const {
     history,
@@ -106,31 +111,6 @@ export default function SessionsScreen() {
             </Text>
           </>
         ) : null}
-
-        <Text style={styles.sectionLabel}>Appearance</Text>
-        <View style={styles.card}>
-          <Text style={styles.appearanceCopy}>
-            Follow this phone, or choose an appearance for Axune.
-          </Text>
-          <View style={styles.themeChoices}>
-            {(['system', 'light', 'dark'] as const).map((choice) => (
-              <Pressable
-                key={choice}
-                onPress={() => setMode(choice)}
-                style={[styles.themeChoice, mode === choice && styles.themeChoiceSelected]}
-              >
-                <Text
-                  style={[
-                    styles.themeChoiceText,
-                    mode === choice && styles.themeChoiceTextSelected,
-                  ]}
-                >
-                  {choice[0].toUpperCase() + choice.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
 
         <Text style={styles.sectionLabel}>Connection</Text>
         <View style={styles.card}>
@@ -270,29 +250,6 @@ const makeStyles = (color: Palette) =>
     },
     detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1, textAlign: 'right' },
     muted: { color: color.textSoft, fontSize: 13, paddingVertical: 10 },
-    appearanceCopy: {
-      color: color.textMuted,
-      fontSize: 13,
-      lineHeight: 19,
-      paddingTop: spacing.sm,
-    },
-    themeChoices: {
-      flexDirection: 'row',
-      gap: spacing.xs,
-      paddingTop: spacing.md,
-      paddingBottom: spacing.sm,
-    },
-    themeChoice: {
-      flex: 1,
-      alignItems: 'center',
-      borderRadius: radius.sm,
-      borderWidth: 1,
-      borderColor: color.line,
-      paddingVertical: 9,
-    },
-    themeChoiceSelected: { backgroundColor: color.claudeIconBg, borderColor: color.claude },
-    themeChoiceText: { color: color.textMuted, fontSize: 12, fontWeight: '600' },
-    themeChoiceTextSelected: { color: color.claudeIconText },
     branchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 10 },
     branchCopy: { flex: 1 },
     branchName: { color: color.codexText, fontSize: 13, fontWeight: '600' },
