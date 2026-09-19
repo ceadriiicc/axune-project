@@ -3,270 +3,267 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { ago } from '@/components/ui/home/RepoStatus';
 import { type Palette, radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
-import { useWorkspace } from '@/lib/WorkspaceContext';
+import { useWorkspace, type LiveRun, type Thread } from '@/lib/WorkspaceContext';
 
 /**
- * Every run this device has seen.
+ * The conversations this phone has had with the desktop.
  *
- * The settings that used to sit under this history now have a screen of their
- * own. They ended up here because nothing else owned them, which is how a
- * conversation list acquires a theme picker.
+ * Rebuilt around threads rather than individual runs. A flat list of runs is
+ * how the desktop stores them and not how anybody thinks about them: you
+ * remember asking about a bug, not the four prompts it took. Opening a thread
+ * resumes it rather than starting over.
  *
- * The rule that kept this screen honest still holds wherever it went: the
- * mockup's toggles — sync prompts, save sessions — stayed absent, because a
- * switch that controls nothing is worse than no switch. It teaches people the
- * app lies about what it can do.
+ * Two sections left with the migration and are not missed. Connection details
+ * and the agent list were both here because nothing else owned them, and both
+ * are now on screens that do - repeating them here would mean two places to
+ * read the same fact and two places to keep it true.
  */
 export default function SessionsScreen() {
   const router = useRouter();
   const { palette: color } = useTheme();
   const styles = makeStyles(color);
-  const {
-    history,
-    machine,
-    project,
-    capability,
-    connectionState,
-    agents,
-    branches,
-    deleteBranch,
-    disconnect,
-  } = useWorkspace();
+  const { live, threads, openThread, branches, deleteBranch, newConversation } = useWorkspace();
+  const working = live?.status === 'working' ? live : null;
 
-  const connected = connectionState === 'connected' || connectionState === 'reconnecting';
+  const open = (id: string) => {
+    openThread(id);
+    router.push('/workspace');
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Sessions</Text>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.topline}>
+          <View style={styles.flex}>
+            <Text style={styles.kicker}>CONVERSATIONS</Text>
+            <Text style={styles.title}>Sessions</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Start a new conversation"
+            style={[styles.newButton, { backgroundColor: color.text }]}
+            onPress={() => {
+              newConversation();
+              router.push('/workspace');
+            }}
+          >
+            <Ionicons name="add" size={22} color={color.panel} />
+          </Pressable>
+        </View>
 
-        {history.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No runs yet</Text>
-            <Text style={styles.emptyBody}>
-              Runs you start appear here with what the agent read and how long it took.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {history.map((run) => (
-              <Pressable
-                key={run.runId}
-                style={styles.row}
-                onPress={() => router.push('/workspace')}
-              >
-                <View style={styles.rowTop}>
-                  <View
-                    style={[styles.dot, { backgroundColor: outcomeColor(run.outcome, color) }]}
-                  />
-                  <Text style={styles.rowPrompt} numberOfLines={2}>
-                    {run.prompt || 'Untitled run'}
-                  </Text>
-                </View>
-                <Text style={styles.rowMeta}>
-                  {run.outcome} · {ago(run.finishedAt)} ·{' '}
-                  {formatDuration(run.finishedAt - run.startedAt)} · {run.filesRead} read ·{' '}
-                  {run.commands} command{run.commands === 1 ? '' : 's'}
-                </Text>
-                {run.excerpt ? (
-                  <Text style={styles.rowExcerpt} numberOfLines={2}>
-                    {run.excerpt}
-                  </Text>
-                ) : null}
-              </Pressable>
-            ))}
-          </View>
-        )}
+        {working ? <LiveCard run={working} onOpen={() => router.push('/workspace')} styles={styles} /> : null}
 
         {branches.length > 0 ? (
           <>
-            <Text style={styles.sectionLabel}>Agent branches</Text>
+            <Text style={styles.sectionTitle}>Changes ready to review</Text>
             <View style={styles.card}>
               {branches.map((branch) => (
                 <View key={branch.name} style={styles.branchRow}>
-                  <View style={styles.branchCopy}>
+                  <View style={[styles.branchIcon, { backgroundColor: color.claudeIconBg }]}>
+                    <Ionicons name="git-compare-outline" size={17} color={color.claudeIconText} />
+                  </View>
+                  <View style={styles.flex}>
                     <Text style={styles.branchName} numberOfLines={1}>
                       {branch.name.replace(/^axune\//, '')}
                     </Text>
                     <Text style={styles.branchMeta} numberOfLines={1}>
-                      {branch.files} file{branch.files === 1 ? '' : 's'} · {ago(branch.at)}
+                      {[
+                        `${branch.files} file${branch.files === 1 ? '' : 's'}`,
+                        ago(branch.at),
+                      ].join(' · ')}
                     </Text>
                   </View>
                   <Pressable
                     onPress={() => deleteBranch(branch.name)}
-                    hitSlop={10}
-                    style={styles.branchDelete}
+                    hitSlop={12}
+                    accessibilityLabel={`Delete ${branch.name}`}
                   >
-                    <Ionicons name="trash-outline" size={16} color={color.textSoft} />
+                    <Ionicons name="trash-outline" size={17} color={color.textSoft} />
                   </Pressable>
                 </View>
               ))}
             </View>
             <Text style={styles.branchHint}>
-              Merge one at your desk with git merge {branches[0]?.name ?? ''}
+              Keep one at your desk with git merge {branches[0]?.name ?? ''}
             </Text>
           </>
         ) : null}
 
-        <Text style={styles.sectionLabel}>Connection</Text>
-        <View style={styles.card}>
-          <Detail label="Machine" value={machine?.name ?? 'Not paired'} />
-          <Detail label="Project" value={project?.name ?? '—'} />
-          <Detail label="Branch" value={project?.branch ?? '—'} />
-          <Detail
-            label="Permission"
-            value={capability === 'read-only' ? 'Read-only' : 'Read + write'}
-          />
-          <Detail label="Transport" value={machine ? `${machine.connection} network` : '—'} />
-        </View>
-
-        <Text style={styles.sectionLabel}>Agents</Text>
-        <View style={styles.card}>
-          {agents.length === 0 ? (
-            <Text style={styles.muted}>Not connected.</Text>
-          ) : (
-            agents.map((agent) => (
-              <Detail
-                key={agent.agentId}
-                label={agent.agentId}
-                value={
-                  agent.installed
-                    ? `Ready${agent.version ? ` · ${agent.version.replace(/\s*\(.*\)$/, '')}` : ''}`
-                    : 'Not installed'
-                }
+        <Text style={styles.sectionTitle}>Earlier conversations</Text>
+        {threads.length === 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.emptyTitle}>Nothing to resume yet</Text>
+            <Text style={styles.emptyBody}>
+              Conversations you finish are kept here, so you can pick one up rather than explaining
+              it again.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            {threads.map((thread, index) => (
+              <ThreadRow
+                key={thread.id}
+                thread={thread}
+                first={index === 0}
+                onPress={() => open(thread.id)}
+                styles={styles}
               />
-            ))
-          )}
-        </View>
-
-        <Pressable
-          style={styles.danger}
-          onPress={connected ? disconnect : () => router.push('/pair')}
-        >
-          <Ionicons
-            name={connected ? 'unlink-outline' : 'qr-code-outline'}
-            size={16}
-            color={connected ? color.danger : color.claude}
-          />
-          <Text style={[styles.dangerText, !connected && { color: color.claude }]}>
-            {connected ? 'Unpair this phone' : 'Pair a machine'}
-          </Text>
-        </Pressable>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function LiveCard({
+  run,
+  onOpen,
+  styles,
+}: {
+  run: LiveRun;
+  onOpen: () => void;
+  styles: ReturnType<typeof makeStyles>;
+}) {
   const { palette: color } = useTheme();
-  const styles = makeStyles(color);
+  const doing = run.activity[run.activity.length - 1]?.label ?? null;
+
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={1}>
-        {value}
+    <Pressable style={[styles.live, { backgroundColor: color.claudeBubble }]} onPress={onOpen}>
+      <View style={styles.liveTop}>
+        <View style={[styles.avatar, { backgroundColor: color.claudeIconBg }]}>
+          <Text style={[styles.avatarText, { color: color.claudeIconText }]}>C</Text>
+        </View>
+        <Text style={[styles.liveLabel, { color: color.claudeText }]}>CLAUDE IS WORKING</Text>
+        <Ionicons name="chevron-forward" size={18} color={color.claudeText} />
+      </View>
+      <Text style={[styles.livePrompt, { color: color.claudeBubbleText }]} numberOfLines={3}>
+        {run.prompt}
       </Text>
-    </View>
+      {doing ? (
+        <Text style={[styles.liveDoing, { color: color.claudeText }]} numberOfLines={1}>
+          {doing}
+        </Text>
+      ) : null}
+    </Pressable>
   );
 }
 
-function outcomeColor(outcome: string, color: Palette): string {
-  if (outcome === 'completed') return color.ok;
-  if (outcome === 'stopped') return color.textSoft;
-  return color.danger;
+function ThreadRow({
+  thread,
+  first,
+  onPress,
+  styles,
+}: {
+  thread: Thread;
+  first: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const { palette: color } = useTheme();
+  // The last run is what the conversation ended on, which is what someone
+  // scanning the list is trying to recognise.
+  const last = thread.runs[thread.runs.length - 1];
+  if (!last) return null;
+
+  return (
+    <Pressable style={[styles.row, !first && styles.rowDivided]} onPress={onPress}>
+      <View style={styles.rowTop}>
+        <Text style={styles.rowPrompt} numberOfLines={2}>
+          {last.prompt || 'Untitled conversation'}
+        </Text>
+        <Ionicons name="chevron-forward" size={17} color={color.textSoft} />
+      </View>
+      {last.text ? (
+        <Text style={styles.rowExcerpt} numberOfLines={2}>
+          {last.text}
+        </Text>
+      ) : null}
+      <Text style={styles.rowMeta}>
+        {[
+          outcomeLabel(last),
+          ago(thread.startedAt),
+          `${thread.runs.length} prompt${thread.runs.length === 1 ? '' : 's'}`,
+        ].join(' · ')}
+      </Text>
+    </Pressable>
+  );
+}
+
+function outcomeLabel(run: LiveRun): string {
+  if (run.status === 'working') return 'Still running';
+  if (run.status === 'stopped') return 'Stopped';
+  if (run.status === 'failed') return 'Failed';
+  return 'Completed';
 }
 
 const makeStyles = (color: Palette) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: color.bg },
     content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-    title: {
-      color: color.text,
-      fontSize: 30,
-      fontWeight: '800',
-      letterSpacing: -1.1,
-      marginTop: spacing.xs,
+    flex: { flex: 1 },
+    topline: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+    kicker: { color: color.textSoft, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
+    title: { color: color.text, fontSize: 31, letterSpacing: -1, fontWeight: '600', marginTop: 6 },
+    newButton: {
+      height: 42,
+      width: 42,
+      borderRadius: 21,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
 
-    empty: {
-      marginTop: spacing.lg,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: color.line,
-      padding: spacing.lg,
-      backgroundColor: color.panelAlt,
-      gap: 6,
-    },
-    emptyTitle: { color: color.text, fontSize: 15, fontWeight: '600' },
-    emptyBody: { color: color.textMuted, fontSize: 13, lineHeight: 19 },
+    live: { borderRadius: radius.xl, padding: spacing.md, marginTop: spacing.lg, gap: 10 },
+    liveTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    avatar: { height: 26, width: 26, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+    avatarText: { fontSize: 13, fontWeight: '800' },
+    liveLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, flex: 1 },
+    livePrompt: { fontSize: 17, lineHeight: 23, fontWeight: '600' },
+    liveDoing: { fontSize: 13 },
 
-    list: { gap: spacing.sm, marginTop: spacing.lg },
-    row: {
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: color.line,
-      backgroundColor: color.surface,
-      padding: spacing.md,
-    },
-    rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-    dot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
-    rowPrompt: { flex: 1, color: color.text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
-    rowMeta: { color: color.textSoft, fontSize: 11.5, marginTop: 6 },
-    rowExcerpt: { color: color.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 },
-
-    sectionLabel: {
-      color: color.textSoft,
-      fontSize: 10.5,
-      fontWeight: '600',
-      letterSpacing: 0.4,
+    sectionTitle: {
+      color: color.textMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.35,
       textTransform: 'uppercase',
-      marginTop: spacing.xl,
+      marginTop: spacing.lg,
       marginBottom: spacing.sm,
     },
     card: {
-      borderRadius: radius.md,
+      backgroundColor: color.panel,
+      borderRadius: radius.xl,
       borderWidth: 1,
       borderColor: color.line,
-      backgroundColor: color.surface,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 4,
+      overflow: 'hidden',
     },
-    detailRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: spacing.md,
-      paddingVertical: 10,
-    },
-    detailLabel: {
-      color: color.textSoft,
-      fontSize: 12,
-      textTransform: 'uppercase',
-      letterSpacing: 0.45,
-    },
-    detailValue: { color: color.textMuted, fontSize: 13, flexShrink: 1, textAlign: 'right' },
-    muted: { color: color.textSoft, fontSize: 13, paddingVertical: 10 },
-    branchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 10 },
-    branchCopy: { flex: 1 },
-    branchName: { color: color.codexText, fontSize: 13, fontWeight: '600' },
-    branchMeta: { color: color.textSoft, fontSize: 11, marginTop: 2 },
-    branchDelete: { padding: 4 },
-    branchHint: { color: color.textSoft, fontSize: 11, marginTop: 6, lineHeight: 16 },
 
-    danger: {
+    row: { padding: spacing.md, gap: 5 },
+    rowDivided: { borderTopWidth: 1, borderTopColor: color.line },
+    rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+    rowPrompt: { color: color.text, fontSize: 16, lineHeight: 22, fontWeight: '600', flex: 1 },
+    rowExcerpt: { color: color.textMuted, fontSize: 13.5, lineHeight: 19 },
+    rowMeta: { color: color.textSoft, fontSize: 12, marginTop: 2 },
+
+    emptyTitle: { color: color.text, fontSize: 16, fontWeight: '700', padding: spacing.md, paddingBottom: 0 },
+    emptyBody: {
+      color: color.textMuted,
+      fontSize: 13.5,
+      lineHeight: 19,
+      padding: spacing.md,
+      paddingTop: 6,
+    },
+
+    branchRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      marginTop: spacing.xl,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: color.line,
-      paddingVertical: 13,
+      gap: spacing.sm,
+      padding: spacing.md,
     },
-    dangerText: { color: color.danger, fontSize: 14, fontWeight: '600' },
+    branchIcon: { height: 34, width: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    branchName: { color: color.text, fontSize: 15, fontWeight: '700' },
+    branchMeta: { color: color.textMuted, fontSize: 12.5, marginTop: 2 },
+    branchHint: { color: color.textSoft, fontSize: 12, marginTop: spacing.sm, lineHeight: 18 },
   });
