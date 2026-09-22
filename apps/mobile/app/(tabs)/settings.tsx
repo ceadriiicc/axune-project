@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { type Palette, radius, spacing } from '@/constants/theme';
+import { applyCaptureGuard, loadCaptureGuard, saveCaptureGuard } from '@/lib/captureGuard';
 import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
@@ -30,6 +31,20 @@ export default function SettingsScreen() {
   } = useTheme();
   const styles = makeStyles(color);
   const { machine, project, capability, connectionState, disconnect } = useWorkspace();
+
+  // Read once rather than held in context: PrivacyShield applies it at launch
+  // and this applies it on change, so the two never need to agree through
+  // shared state. Starts guarded so the switch never flickers off-then-on.
+  const [captureGuard, setCaptureGuard] = useState(true);
+  useEffect(() => {
+    void loadCaptureGuard().then(setCaptureGuard);
+  }, []);
+
+  const toggleCaptureGuard = (on: boolean) => {
+    setCaptureGuard(on);
+    void applyCaptureGuard(on);
+    void saveCaptureGuard(on);
+  };
   const connected = connectionState === 'connected' || connectionState === 'reconnecting';
 
   return (
@@ -130,9 +145,25 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Privacy" styles={styles}>
+          <View style={styles.row}>
+            <Ionicons name="eye-off-outline" size={19} color={color.textMuted} />
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionLabel}>Block screen recording</Text>
+              <Text style={styles.actionDetail}>
+                Axune appears blank in recordings and screenshots. Turn this off to record a demo.
+              </Text>
+            </View>
+            <Switch
+              value={captureGuard}
+              onValueChange={toggleCaptureGuard}
+              trackColor={{ true: color.claude, false: color.line }}
+            />
+          </View>
           <Text style={styles.privacy}>
             This phone receives the prompts you send, the agent's replies, which tools it ran, and
             what a write run changed. Your repository and your agent stay on the desktop.
+            Conversations are stored encrypted, and Axune covers the screen whenever it is not in
+            front — so the app switcher never keeps a picture of your code.
           </Text>
         </Section>
       </ScrollView>
