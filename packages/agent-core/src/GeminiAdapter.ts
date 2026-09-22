@@ -368,7 +368,10 @@ export class GeminiAdapter implements AgentAdapter {
       case 'assistant':
       case 'text': {
         const text = pickText(record);
-        return text ? [{ type: 'message_delta', text }] : [];
+        // Redacted like the Claude Code adapter's: an agent that has read a
+        // secret will repeat it in prose if asked, and masking only the tool
+        // result leaves the reply carrying it in full.
+        return text ? [{ type: 'message_delta', text: redactSecrets(text) }] : [];
       }
 
       case 'tool_call':

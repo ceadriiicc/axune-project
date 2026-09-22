@@ -79,12 +79,23 @@ async function main() {
     return `${onPhone} on both, and a different machine shows ${other.fingerprint}`;
   });
 
-  await check('unpaired socket is ignored', async () => {
+  await check('unpaired socket is refused, and told why', async () => {
+    // This used to assert silence, and silence was what the server gave: the
+    // gate was a bare `return`. Correct denial, but the phone then waited for
+    // a reply that was never coming, which is the same shape as the run that
+    // once spent forty seconds being refused by an unexplained boundary.
+    //
+    // So the assertion is now stricter in both directions: a refusal must
+    // arrive, and it must not be anything that could act on the request.
     const sock = await connect(port, server.identity.publicKeyEncoded);
     sock.send(JSON.stringify({ type: 'start_run', runId: 'x', sessionId: 'x', prompt: 'hi', agentIds: [], mode: 'independent' }));
-    const reply = await waitFor(sock, [], 800);
+    const reply = await waitFor(sock, ['pair_rejected', 'event', 'paired', 'resumed'], 2000);
     sock.close();
-    return reply === null ? 'no response, as required' : `LEAK: got ${reply.type}`;
+
+    if (reply === null) return 'REGRESSED: silent again - the phone would wait for ever';
+    if (reply.type !== 'pair_rejected') return `LEAK: got ${reply.type} from an unpaired socket`;
+    if (reply.reason !== 'not_paired') return `UNEXPECTED reason: ${reply.reason}`;
+    return `refused with a reason the phone can act on: ${reply.reason}`;
   });
 
   // 2 — a bad token is refused.
@@ -176,14 +187,29 @@ async function main() {
   console.log('\nserver stopped cleanly.');
 }
 
+/** Failures counted so the process can exit non-zero rather than only look wrong. */
+let failures = 0;
+
 async function check(label: string, fn: () => Promise<string>): Promise<void> {
   try {
     const detail = await fn();
-    const bad = /LEAK|UNEXPECTED|MISMATCH/.test(detail);
+    // `FAIL` and `REGRESSED` were missing from this pattern, so a check that
+    // returned one printed a tick. The reconnect check did exactly that: it
+    // reported "FAIL: resume refused the session token" under a ✔ for as long
+    // as the bug existed. A suite that renders a failure as a pass is worse
+    // than no suite, because it is actively consulted.
+    const bad = /\b(FAIL|LEAK|UNEXPECTED|MISMATCH|REGRESSED)\b/.test(detail);
+    if (bad) failures += 1;
     console.log(`${bad ? '✖' : '✔'} ${label}\n    ${detail}`);
   } catch (error) {
+    failures += 1;
     console.log(`✖ ${label}\n    threw: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/** Called at the end so a red run is also a non-zero exit. */
+function transportFailures(): number {
+  return failures;
 }
 
 /**
@@ -232,7 +258,18 @@ function waitFor(
   });
 }
 
-main().catch((error) => {
-  console.error('transport test failed:', error);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // A red run must also be a non-zero exit. Without this the suite could be
+    // run from a script, print failures, and still report success.
+    if (failures > 0) {
+      console.log(`\n${failures} check(s) failed\n`);
+      process.exit(1);
+    }
+    console.log('\nall checks passed\n');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('transport test failed:', error);
+    process.exit(1);
+  });

@@ -2,135 +2,186 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:;" />
-    <title>Axune</title>
+    <title>Axune Desktop</title>
     <style>
-      /* Same tokens as the phone, so the two halves look like one product. */
+      /* Mobile's dark palette, local to desktop. Panels: 22px; controls: 14px.
+         DESIGN_VARIANCE: 3; MOTION_INTENSITY: 1; VISUAL_DENSITY: 5. */
       :root {
+        color-scheme: dark;
         --bg: #11161d;
-        --surface: rgba(255, 255, 255, 0.035);
+        --panel: #1a222c;
+        --panel-alt: #202a36;
         --line: rgba(255, 255, 255, 0.08);
+        --line-strong: rgba(255, 255, 255, 0.16);
         --text: #f7f9fb;
         --muted: #b0bbc8;
         --soft: #7e8b9b;
-        --claude: #d8ad7b;
-        --codex: #6eb8bb;
+        --claude: #f0c291;
+        --codex: #8ad8dc;
         --ok: #7ac099;
         --danger: #cc7c7c;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       body {
         margin: 0;
-        padding: 18px;
         background: var(--bg);
         color: var(--text);
-        font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         -webkit-font-smoothing: antialiased;
-        user-select: none;
       }
-      h1 { font-size: 16px; margin: 0 0 2px; letter-spacing: -0.3px; }
-      .sub { color: var(--soft); font-size: 11.5px; }
-      .card {
-        border: 1px solid var(--line);
-        background: var(--surface);
-        border-radius: 12px;
-        padding: 12px;
-        margin-top: 12px;
-      }
-      .row { display: flex; align-items: center; gap: 8px; }
-      .grow { flex: 1; min-width: 0; }
-      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--soft); flex: none; }
-      .dot.on { background: var(--ok); }
-      .dot.busy { background: var(--claude); }
-      .project { font-size: 15px; font-weight: 650; }
-      .branch { color: var(--muted); font-size: 12px; }
+      button { font: inherit; }
+      button, summary { -webkit-tap-highlight-color: transparent; }
       button {
-        font: inherit;
-        border: 1px solid var(--line);
+        min-height: 40px;
+        padding: 8px 13px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
         background: transparent;
-        color: var(--muted);
-        border-radius: 8px;
-        padding: 6px 10px;
-        cursor: pointer;
-      }
-      button:hover { border-color: rgba(255, 255, 255, 0.2); color: var(--text); }
-      button.primary { background: var(--claude); border-color: transparent; color: #1e1b18; font-weight: 650; }
-      .label {
-        color: var(--soft);
-        font-size: 10px;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        font-weight: 650;
-      }
-      #qr {
-        font-family: Consolas, Menlo, monospace;
-        font-size: 7px;
-        line-height: 7px;
-        letter-spacing: 0;
-        white-space: pre;
-        text-align: center;
-        margin: 10px 0 6px;
         color: var(--text);
+        cursor: pointer;
+        font-weight: 600;
+        white-space: nowrap;
       }
-      .agent { display: flex; align-items: center; gap: 7px; margin-top: 8px; font-size: 12px; }
-      .agent .name { color: var(--claude); font-weight: 600; }
-      .agent .state { color: var(--soft); font-size: 11px; }
-      #feed { max-height: 200px; overflow-y: auto; margin-top: 6px; }
-      .line { display: flex; gap: 8px; padding: 3px 0; font-size: 11.5px; color: var(--muted); }
-      .line .time { color: var(--soft); font-variant-numeric: tabular-nums; flex: none; }
-      .line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .stream {
-        margin-top: 8px;
-        padding: 8px;
-        border-radius: 8px;
-        background: rgba(0, 0, 0, 0.25);
-        font-size: 11.5px;
-        color: var(--muted);
-        max-height: 150px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        user-select: text;
+      button:hover:not(:disabled) { background: var(--panel-alt); border-color: var(--muted); }
+      button:active:not(:disabled) { opacity: 0.75; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      :focus-visible { outline: 2px solid var(--codex); outline-offset: 4px; }
+      button.primary { background: #d8ad7b; border-color: #d8ad7b; color: #11161d; }
+      button.primary:hover:not(:disabled) { background: #f0c291; border-color: #f0c291; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 24px; line-height: 1.15; letter-spacing: -0.8px; font-weight: 650; }
+      h2 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -0.3px; }
+      h3 { font-size: 12px; font-weight: 500; color: var(--muted); }
+      .shell { max-width: 1000px; margin: 0 auto; padding: 24px; }
+      .topbar, .section-heading, .connection { display: flex; align-items: center; gap: 10px; }
+      .topbar { justify-content: space-between; margin-bottom: 22px; }
+      .wordmark { display: flex; align-items: baseline; gap: 9px; }
+      .desktop-label { color: var(--soft); font-size: 12px; }
+      .connection { min-width: 0; max-width: 55%; color: var(--muted); font-size: 12px; }
+      #linkText { overflow-wrap: anywhere; }
+      .dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--soft); }
+      .dot.on { background: var(--ok); }
+      .workspace { display: grid; gap: 14px; }
+      .panel { min-width: 0; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); padding: 20px; }
+      .section-heading { justify-content: space-between; margin-bottom: 16px; }
+      .eyebrow { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; }
+      #project { font-size: 26px; letter-spacing: -0.7px; line-height: 1.2; overflow-wrap: anywhere; }
+      .path { color: var(--muted); font: 12px/1.6 Consolas, "SFMono-Regular", monospace; overflow-wrap: anywhere; margin-top: 8px; user-select: text; }
+      .project-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 14px; }
+      .branch { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
+      .branch-label { color: var(--soft); font-size: 12px; }
+      #branch { color: var(--muted); font: 12px/1.5 Consolas, "SFMono-Regular", monospace; overflow-wrap: anywhere; }
+      #open { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+      .agents-section { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+      #agents { display: grid; gap: 10px; margin-top: 10px; }
+      .agent { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .agent-mark { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 11px; background: #3b434d; color: #e7edf3; font-size: 14px; font-weight: 650; }
+      .agent[data-agent="claude-code"] .agent-mark { background: #60462d; color: #f0d8bf; }
+      .agent[data-agent="codex"] .agent-mark { background: #24474e; color: #bfe8ea; }
+      .agent[data-agent="gemini-cli"] .agent-mark { background: #453d72; color: #e5ddff; }
+      .agent-info { min-width: 0; flex: 1; }
+      .agent-name { font-weight: 600; overflow-wrap: anywhere; }
+      .agent-version { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+      .agent-state { max-width: 45%; color: var(--muted); font-size: 11px; text-align: right; overflow-wrap: anywhere; }
+      .agent-state.available { color: var(--ok); }
+      .pairing-layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); align-items: center; gap: 18px; }
+      .qr-frame { display: grid; place-items: center; width: 176px; min-height: 176px; padding: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; }
+      .qr-frame:has(canvas:not([hidden])) { background: #fff; }
+      #qr { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+      #qrPlaceholder { color: var(--muted); text-align: center; padding: 12px; font-size: 12px; }
+      .pairing-copy { min-width: 0; }
+      .pairing-copy p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .pairing-copy strong { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+      #expiry { margin-top: 12px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+      #expiry.expired { color: var(--claude); }
+      .network { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+      .network-label { color: var(--soft); font-size: 11px; }
+      #address { color: var(--muted); font: 11px/1.6 Consolas, "SFMono-Regular", monospace; overflow-wrap: anywhere; user-select: text; }
+      .activity-panel { margin-top: 22px; }
+      .activity-panel .section-heading { margin-bottom: 8px; }
+      .feed-note { color: var(--soft); font-size: 11px; }
+      #feed { max-height: 240px; overflow-y: auto; scrollbar-gutter: stable; }
+      .line { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+      .time { color: var(--soft); font-variant-numeric: tabular-nums; }
+      .txt { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+      .line.error .txt { color: var(--danger); }
+      .empty { padding: 18px 0; color: var(--muted); font-size: 12px; }
+      .empty strong { display: block; color: var(--text); font-weight: 500; margin-bottom: 4px; }
+      #streams { display: grid; gap: 8px; margin-top: 12px; }
+      .run { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); min-width: 0; }
+      .run summary { padding: 12px; cursor: pointer; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+      .stream { margin: 0; padding: 0 12px 12px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font: 12px/1.65 Consolas, "SFMono-Regular", monospace; user-select: text; }
+      .notice { display: flex; align-items: start; gap: 12px; margin-bottom: 14px; padding: 12px; border: 1px solid var(--danger); border-radius: 14px; }
+      #errorText { flex: 1; min-width: 0; color: var(--danger); overflow-wrap: anywhere; font-size: 12px; }
+      #dismiss { min-height: 32px; padding: 4px 8px; font-size: 11px; }
+      @media (min-width: 760px) {
+        .shell { padding: 32px; }
+        .workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+        .pairing-layout { grid-template-columns: 1fr; justify-items: center; }
+        .pairing-copy { width: 100%; }
       }
-      .hint { color: var(--soft); font-size: 11px; margin-top: 8px; }
-      .empty { color: var(--soft); font-size: 12px; padding: 6px 0; }
+      @media (max-width: 419px) {
+        .shell { padding: 16px; }
+        .panel { padding: 16px; }
+        .topbar { margin-bottom: 18px; }
+        .desktop-label { display: none; }
+        .pairing-layout { grid-template-columns: 1fr; justify-items: center; gap: 12px; }
+        .pairing-copy { width: 100%; }
+        .pairing-copy strong { margin-bottom: 3px; }
+        #expiry { margin-top: 6px; }
+      }
     </style>
   </head>
   <body>
-    <div class="row">
-      <div class="grow">
-        <h1>Axune</h1>
-        <div class="sub" id="address">starting…</div>
+    <main class="shell">
+      <header class="topbar">
+        <div class="wordmark"><h1>Axune</h1><span class="desktop-label">Desktop</span></div>
+        <div class="connection" role="status"><span class="dot" id="link" aria-hidden="true"></span><span id="linkText">Waiting for phone</span></div>
+      </header>
+      <div id="errorNotice" class="notice" hidden>
+        <p id="errorText" role="alert"></p><button id="dismiss" type="button">Dismiss</button>
       </div>
-      <div class="dot" id="link"></div>
-      <span class="sub" id="linkText">no phone</span>
-    </div>
-
-    <div class="card">
-      <div class="row">
-        <div class="grow">
-          <div class="project" id="project">—</div>
-          <div class="branch" id="branch"></div>
+      <div class="workspace">
+        <section class="panel" aria-labelledby="projectLabel">
+          <div class="section-heading"><h2 class="eyebrow" id="projectLabel">Your project</h2><button id="choose" type="button" disabled>Change…</button></div>
+          <h2 id="project">Loading project…</h2>
+          <p class="path" id="path"></p>
+          <div class="project-meta">
+            <div class="branch" id="branchMeta" hidden><span class="branch-label">Branch</span><span id="branch"></span></div>
+            <button id="open" type="button" disabled>Open folder</button>
+          </div>
+          <div class="agents-section">
+            <h3>Local agents</h3>
+            <div id="agents"><p class="empty">Waiting for agent status…</p></div>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="pairingTitle">
+          <div class="section-heading"><h2 id="pairingTitle">Pair your phone</h2><button class="primary" id="refresh" type="button" disabled>New code</button></div>
+          <div class="pairing-layout">
+            <div class="qr-frame">
+              <canvas id="qr" role="img" aria-label="Axune phone pairing QR code" hidden></canvas>
+              <p id="qrPlaceholder">Waiting for pairing code…</p>
+            </div>
+            <div class="pairing-copy">
+              <strong>Continue from your phone.</strong>
+              <p>Scan in Axune Mobile with both devices on the same network.</p>
+              <p id="expiry"></p>
+            </div>
+          </div>
+          <div class="network"><span class="network-label">LAN address</span><span id="address">Starting…</span></div>
+        </section>
+      </div>
+      <section class="activity-panel" aria-labelledby="activityTitle">
+        <div class="section-heading"><h2 id="activityTitle">Activity</h2><span class="feed-note">Latest 40 events</span></div>
+        <div id="feed" role="log" aria-label="Desktop activity" aria-live="polite" tabindex="0">
+          <div class="empty"><strong>No activity yet</strong>Connections and agent activity will appear here.</div>
         </div>
-        <button id="choose">Change…</button>
-      </div>
-      <div id="agents"></div>
-    </div>
-
-    <div class="card">
-      <div class="row">
-        <span class="label grow">Pair a phone</span>
-        <button id="refresh">New code</button>
-      </div>
-      <div id="qr">…</div>
-      <div class="sub" id="expiry"></div>
-    </div>
-
-    <div class="card">
-      <span class="label">Activity</span>
-      <div id="feed"><div class="empty">Nothing yet.</div></div>
-      <div class="stream" id="stream" hidden></div>
-    </div>
-
+        <div id="streams" aria-label="Recent agent output"></div>
+      </section>
+    </main>
     <script src="./renderer.js"></script>
   </body>
 </html>
