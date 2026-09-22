@@ -214,19 +214,53 @@ export function checkCommand(command: unknown, mode: 'read' | 'write'): PolicyDe
 /**
  * Strip anything that looks like a credential before it reaches an event.
  *
- * Tool inputs are streamed to the phone and written to the activity log. A
- * token that appears in one of them has been copied to two more places.
+ * Tool inputs and tool results are streamed to the phone, written to the
+ * activity log, and can reach a commit message. A token appearing in one of
+ * them has been copied to three more places, and the results are the ones that
+ * matter: they carry file contents, so a key hardcoded in an ordinary source
+ * file - not a `.env`, so nothing refused the read - was being duplicated
+ * verbatim into all of them.
+ *
+ * ## What this cannot do
+ *
+ * It cannot mask before ingest, which is what the privacy note originally asked
+ * for. The agent reads files through its own CLI and feeds its own model; Axune
+ * never sees a tool result before the model does, and `canUseTool` can amend an
+ * input but has no equivalent for a result. So the model still sees whatever is
+ * in a file the user asked it to read.
+ *
+ * That limit is also why this costs no capability at all. Redaction happens
+ * strictly downstream of the model, so nothing an agent needs is taken away -
+ * only Axune's own copies are masked. The concern that this proposal would
+ * blind an agent applied to a design that is not reachable from here.
+ *
+ * Patterns are deliberately high-confidence and each leaves a visible marker,
+ * because silent redaction is indistinguishable from a file that was empty.
  */
 export function redactSecrets(text: string): string {
-  return text
-    .replace(/\b(sk-[A-Za-z0-9_-]{16,})/g, 'sk-***')
-    .replace(/\b(gh[pousr]_[A-Za-z0-9]{16,})/g, 'gh*_***')
-    .replace(/\b(AKIA[0-9A-Z]{12,})/g, 'AKIA***')
-    .replace(/\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g, 'jwt.***')
-    .replace(
-      /((?:api[_-]?key|secret|password|token|authorization)\s*[:=]\s*)["']?[A-Za-z0-9._-]{8,}["']?/gi,
-      '$1***',
-    );
+  return (
+    text
+      .replace(/\b(sk-[A-Za-z0-9_-]{16,})/g, 'sk-***')
+      .replace(/\b(gh[pousr]_[A-Za-z0-9]{16,})/g, 'gh*_***')
+      .replace(/\b(AKIA[0-9A-Z]{12,})/g, 'AKIA***')
+      .replace(/\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g, 'jwt.***')
+      .replace(/\b(AIza[0-9A-Za-z_-]{30,})/g, 'AIza***')
+      .replace(/\b(xox[abprs]-[A-Za-z0-9-]{10,})/g, 'xox*-***')
+      .replace(/\b(npm_[A-Za-z0-9]{30,})/g, 'npm_***')
+      // A whole key block, not a line of it. Non-greedy so two keys in one file
+      // do not collapse into a single match that swallows what lies between.
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+        '-----BEGIN PRIVATE KEY----- *** -----END PRIVATE KEY-----',
+      )
+      // Credentials embedded in a connection string, which no other pattern
+      // here catches because the secret has no recognisable prefix of its own.
+      .replace(/(\/\/[^:/\s@]+:)[^@\s/]{3,}@/g, '$1***@')
+      .replace(
+        /((?:api[_-]?key|secret|password|token|authorization)\s*[:=]\s*)["']?[A-Za-z0-9._-]{8,}["']?/gi,
+        '$1***',
+      )
+  );
 }
 
 /**

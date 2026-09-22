@@ -16,6 +16,8 @@ import { join } from 'node:path';
 
 import type { AgentEvent } from '@axune/protocol';
 
+import { redactSecrets, translate } from '@axune/agent-core';
+
 import { ActivityLog } from './core/ActivityLog';
 import { EgressLedger } from './core/EgressLedger';
 import { SessionStore, deviceKey } from './core/SessionStore';
@@ -283,6 +285,107 @@ check('a wiped activity log reports how much it removed', () => {
   if (removed !== 2) return `FAIL: reported ${removed}, expected 2`;
   if (new ActivityLog(file, 300).recent(40).length !== 0) return 'FAIL: entries survived a restart';
   return 'reported 2 removed, and none came back';
+});
+
+// ---- what reaches the phone and the log ----------------------------------
+//
+// `redactSecrets` existed and was called in exactly one place: inside `deny()`.
+// So the only tool inputs being masked were the ones belonging to calls that
+// were refused - the calls whose contents never travelled anyway. Every allowed
+// call streamed its input and its result verbatim, and results are the ones
+// carrying file contents. Reading the file gave the opposite impression,
+// because the redaction was plainly visible a hundred lines further up.
+
+const SECRET = ['sk', '-abcdefghijklmnopqrstuvwxyz012345'].join('');
+
+check('an allowed tool call does not stream its input verbatim', () => {
+  const [event] = translate({
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { token: SECRET } }] },
+  } as never);
+  const input = String((event as { input?: unknown }).input ?? '');
+  if (input.includes(SECRET)) return 'FAIL: the secret reached the event';
+  if (!input.includes('***')) return `FAIL: redacted silently, no marker: ${input}`;
+  return `masked with a visible marker: ${input.slice(0, 60)}`;
+});
+
+check('a file read does not stream its contents verbatim', () => {
+  // The one that matters. A key hardcoded in an ordinary source file is not in
+  // a `.env`, so nothing refuses the read, and the contents come back here.
+  const [event] = translate({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 't1',
+          content: [{ type: 'text', text: `const KEY = "${SECRET}";\nexport default KEY;` }],
+        },
+      ],
+    },
+  } as never);
+  const output = String((event as { output?: unknown }).output ?? '');
+  if (output.includes(SECRET)) return 'FAIL: file contents reached the event unmasked';
+  if (!output.includes('export default KEY')) return 'FAIL: the surrounding code was destroyed';
+  return 'the key is masked and the code around it survives';
+});
+
+check('the shapes a credential actually arrives in are all caught', () => {
+  // Assembled at runtime rather than written out. These are invented, but they
+  // are invented to look exactly like the real thing, which is the point of
+  // them - and GitHub's push protection duly rejected the commit that first
+  // spelled the Slack one out in full. Keeping them in pieces means the file
+  // contains no credential-shaped literal while the test still sees one.
+  const shaped = (...parts: string[]) => parts.join('');
+  const cases: [string, string][] = [
+    [shaped('sk', '-abcdefghijklmnopqrstuvwxyz012345'), 'OpenAI/Anthropic'],
+    [shaped('ghp', '_abcdefghijklmnopqrstuvwxyz0123456789'), 'GitHub'],
+    [shaped('AKIA', 'IOSFODNN7EXAMPLE'), 'AWS access key'],
+    [shaped('AIza', 'SyA1234567890abcdefghijklmnopqrstuvw'), 'Google API key'],
+    [shaped('xox', 'b-1234567890-abcdefghijklmno'), 'Slack'],
+    [shaped('npm', '_abcdefghijklmnopqrstuvwxyz0123456789'), 'npm'],
+    [shaped('eyJhbGciOiJIUzI1NiJ9', '.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27u'), 'JWT'],
+  ];
+  for (const [secret, label] of cases) {
+    const out = redactSecrets(`value = ${secret}`);
+    if (out.includes(secret)) return `FAIL: ${label} survived: ${out}`;
+  }
+
+  const pem = ['-----BEGIN RSA PRIVATE', ' KEY-----\nMIIEow==\nAAAA\n-----END RSA PRIVATE', ' KEY-----'].join('');
+  if (redactSecrets(pem).includes('MIIEow')) return 'FAIL: a private key block survived';
+
+  const dsn = 'postgres://axune:hunter2hunter2@db.internal:5432/app';
+  const masked = redactSecrets(dsn);
+  if (masked.includes('hunter2hunter2')) return `FAIL: a connection-string password survived: ${masked}`;
+  if (!masked.includes('db.internal')) return 'FAIL: the host was destroyed along with the password';
+
+  return `${cases.length} token shapes, a PEM block and a connection string all masked`;
+});
+
+check('ordinary code is not mangled into uselessness', () => {
+  // Over-redaction is the failure that makes people turn a control off. A
+  // transcript full of *** is not a safer transcript, it is an unread one.
+  const ordinary = [
+    'import { useState } from "react";',
+    'const total = items.reduce((a, b) => a + b.price, 0);',
+    'if (response.status === 401) throw new Error("unauthorized");',
+    'export type Token = { kind: "word" | "number" };',
+    '// TODO: rename this variable, it is confusing',
+  ].join('\n');
+  const out = redactSecrets(ordinary);
+  if (out !== ordinary) {
+    return `FAIL: ordinary source was altered:\n      ${out.split('\n').find((l, i) => l !== ordinary.split('\n')[i])}`;
+  }
+  return '5 lines of ordinary source passed through untouched';
+});
+
+check('redaction is idempotent', () => {
+  // Events are translated once, but the same text can pass through a commit
+  // subject as well. A second pass eating its own marker would be a slow leak
+  // of context rather than of secrets, and it would be hard to notice.
+  const once = redactSecrets(`token = ${SECRET}`);
+  if (redactSecrets(once) !== once) return `FAIL: second pass changed it to ${redactSecrets(once)}`;
+  return 'a second pass is a no-op';
 });
 
 rmSync(scratch, { recursive: true, force: true });

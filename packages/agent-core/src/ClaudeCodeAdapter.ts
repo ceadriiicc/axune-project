@@ -296,7 +296,15 @@ function pickSessionId(message: UnknownMessage): string | null {
   return typeof id === 'string' ? id : null;
 }
 
-function translate(message: UnknownMessage): AgentEventBody[] {
+/**
+ * One provider message into zero or more Axune events.
+ *
+ * Exported for `try:privacy`. It was not, and that is how tool results reached
+ * the phone unredacted for as long as they did: the redaction was visible in
+ * `canUseTool` a hundred lines above, so reading the file gave the impression
+ * the job was done. Nothing exercised this path, so nothing disagreed.
+ */
+export function translate(message: UnknownMessage): AgentEventBody[] {
   const type = message['type'];
   const events: AgentEventBody[] = [];
 
@@ -310,7 +318,10 @@ function translate(message: UnknownMessage): AgentEventBody[] {
           type: 'tool_started',
           toolCallId: String(block['id'] ?? ''),
           toolName: String(block['name'] ?? 'unknown'),
-          input: safeStringify(block['input']),
+          // This is the path an *allowed* call takes. The redaction in
+          // `canUseTool` only ever ran inside `deny()`, so until now the only
+          // inputs being masked were the ones that never travelled anyway.
+          input: redactSecrets(safeStringify(block['input'])),
         });
       }
     }
@@ -324,7 +335,12 @@ function translate(message: UnknownMessage): AgentEventBody[] {
           type: 'tool_finished',
           toolCallId: String(block['tool_use_id'] ?? ''),
           ok: block['is_error'] !== true,
-          output: extractText(block['content']),
+          // Tool *results* are where file contents are: a hardcoded key in an
+          // ordinary source file - not a `.env`, so nothing refused it - was
+          // being copied verbatim into the phone's transcript and the activity
+          // log. This cannot un-see it for the model, which read the file
+          // itself; it stops Axune making further copies of it.
+          output: redactSecrets(extractText(block['content'])),
         });
       }
     }
