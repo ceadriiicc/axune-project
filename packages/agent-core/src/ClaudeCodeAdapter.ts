@@ -312,7 +312,16 @@ export function translate(message: UnknownMessage): AgentEventBody[] {
     for (const block of contentBlocks(message)) {
       const blockType = block['type'];
       if (blockType === 'text' && typeof block['text'] === 'string' && block['text'].length > 0) {
-        events.push({ type: 'message_delta', text: block['text'] });
+        // The agent's own prose, which is where a secret actually escaped.
+        // Redacting tool results masks what Axune copies out of a file, but the
+        // model still read the real value and will repeat it if asked - proved
+        // by a live run where the result showed `sk-***` and the reply beneath
+        // it printed the key in full.
+        //
+        // Not airtight: text arrives in blocks, so a credential split across
+        // two of them would pass a pattern that only ever sees one. Worth
+        // having anyway, since the common case is a whole token in one block.
+        events.push({ type: 'message_delta', text: redactSecrets(block['text']) });
       } else if (blockType === 'tool_use') {
         events.push({
           type: 'tool_started',

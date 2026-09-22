@@ -330,6 +330,23 @@ check('a file read does not stream its contents verbatim', () => {
   return 'the key is masked and the code around it survives';
 });
 
+check('the agent cannot repeat a secret in its own prose', () => {
+  // Found by a live run, not by reading. The tool result came back masked -
+  // `export const API_KEY = "sk-***"` - and the reply underneath it printed the
+  // key in full, because the model had read the real file and was asked for the
+  // value. Masking what Axune copies out of a file does nothing about the model
+  // saying it out loud.
+  const [event] = translate({
+    type: 'assistant',
+    message: { content: [{ type: 'text', text: `The API_KEY is ${SECRET}, and PORT is 8471.` }] },
+  } as never);
+  const text = String((event as { text?: unknown }).text ?? '');
+  if (text.includes(SECRET)) return 'FAIL: the reply carried the secret verbatim';
+  if (!text.includes('PORT is 8471')) return 'FAIL: the rest of the sentence was destroyed';
+  if (!text.includes('***')) return `FAIL: redacted with no marker: ${text}`;
+  return `masked inside prose, sentence intact: "${text}"`;
+});
+
 check('the shapes a credential actually arrives in are all caught', () => {
   // Assembled at runtime rather than written out. These are invented, but they
   // are invented to look exactly like the real thing, which is the point of
