@@ -12,7 +12,14 @@
  * error in, so a damaged one must degrade rather than throw. An app that will
  * not open cannot be used to fix its own settings.
  */
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { AxuneServer } from './core/AxuneServer';
 import { DEFAULT_SETTINGS, parseSettings, serializeSettings } from './core/desktopSettings';
+import { DeviceIdentity } from './core/DeviceIdentity';
+import { PairingManager } from './core/PairingManager';
+import { SessionStore } from './core/SessionStore';
 
 let failures = 0;
 
@@ -91,6 +98,33 @@ check('a round trip keeps both settings exactly', () => {
   if (back.projectPath !== original.projectPath) return `FAIL: path became ${back.projectPath}`;
   if (back.launchOnLogin !== true) return 'FAIL: the login preference was lost';
   return 'both survive storage';
+});
+
+// ---- what a folder that is not a repository is promised ------------------
+
+function serverFor(isGitRepo: boolean): AxuneServer {
+  const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return new AxuneServer(
+    new PairingManager(),
+    { name: 'probe', path: tmpdir(), branch: isGitRepo ? 'main' : '(not a git repo)', isGitRepo },
+    // Throwaway state, so a test never writes to the real desktop's devices.
+    new SessionStore(join(tmpdir(), `axune-lifecycle-${stamp}.json`)),
+    new DeviceIdentity(join(tmpdir(), `axune-lifecycle-id-${stamp}.json`)),
+  );
+}
+
+check('a plain folder is not advertised as writable', () => {
+  // A write run needs a worktree and a worktree needs a repository. `startRun`
+  // already declined to create one for a plain folder - but `capability()`
+  // returned 'read-write' regardless, so the phone offered a write toggle, the
+  // run quietly went ahead read-only, and nothing said so. The guard was
+  // right; the promise above it was not.
+  const plain = serverFor(false).capability();
+  if (plain !== 'read-only') return `FAIL: a non-repository claims ${plain}`;
+
+  const repo = serverFor(true).capability();
+  if (repo !== 'read-write') return `FAIL: a real repository claims ${repo}`;
+  return 'read-only for a plain folder, read-write for a repository';
 });
 
 console.log(failures === 0 ? '\nall checks passed\n' : `\n${failures} check(s) failed\n`);

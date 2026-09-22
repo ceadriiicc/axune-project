@@ -181,7 +181,12 @@ export class AxuneServer {
    * thing being changed.
    */
   capability(): Capability {
-    return 'read-write';
+    // A write run needs a worktree, and a worktree needs a repository. Saying
+    // 'read-write' for a plain folder advertised something the desktop cannot
+    // do: the phone offered a write toggle, `startRun` quietly declined to make
+    // a worktree, and the run went ahead read-only without anyone being told.
+    // The guard was already correct; the promise above it was not.
+    return this.project.isGitRepo ? 'read-write' : 'read-only';
   }
 
   private get worktrees(): WorktreeManager {
@@ -464,6 +469,23 @@ export class AxuneServer {
         .catch(() => null);
     }
     const writing = Boolean(worktree);
+
+    // Say so. Asking for a write and receiving a read is the kind of silent
+    // degradation that teaches people the toggle does nothing - and from the
+    // phone it is indistinguishable from an agent that simply chose not to
+    // change anything.
+    //
+    // Recorded as activity rather than injected as a run event on purpose: the
+    // adapter owns the run's `seq`, and a second source of events would corrupt
+    // the replay that reconnect depends on.
+    if (message.write && !writing) {
+      this.activity.record(
+        'policy.denied',
+        this.project.isGitRepo
+          ? 'Write run fell back to read-only: no worktree could be created'
+          : 'Write run fell back to read-only: this project is not a git repository',
+      );
+    }
 
     const run = adapter.start(
       {
