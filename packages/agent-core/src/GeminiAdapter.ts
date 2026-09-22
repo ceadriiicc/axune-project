@@ -1,10 +1,13 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { AgentEvent } from '@axune/protocol';
 
 import type { AgentAdapter, DetectionResult, RunHandle, RunRequest, RunningRun } from './AgentAdapter';
-import { INJECTION_NOTICE, MAX_TURNS } from './safety';
+import { INJECTION_NOTICE, MAX_TURNS, redactSecrets } from './safety';
 
 const execFileAsync = promisify(execFile);
 
@@ -19,21 +22,24 @@ const execFileAsync = promisify(execFile);
  *
  * ## What is verified and what is not
  *
- * **Verified: nothing about the provider yet.** Gemini CLI is not installed on
- * the machine this was written on, so every claim below about its command line
- * and its output is taken from documentation and must be treated as a
- * hypothesis. The parts that are tested are the parts that do not depend on it:
- * process lifecycle, stop, outcome mapping, and translation, all exercised
- * against a stub binary through `AXUNE_GEMINI_BIN`.
+ * **Verified: the command line, against 0.60.0. Not the containment.** The
+ * flags are now checked against the installed CLI rather than taken from
+ * documentation, which matters because the documented version was wrong in
+ * three ways at once - see `argsFor`. Process lifecycle, stop, outcome mapping
+ * and translation are exercised against a stub through `AXUNE_GEMINI_BIN`.
  *
- * **The first task on install is a breach attempt, not a hello-world.** Gemini
- * CLI ships web search and web fetch tools, which is the same egress exposure
- * that disqualified Codex: a fetch combined with any secret read is a complete
- * exfiltration path. The reason to expect a different outcome is that Gemini
- * documents a real tool allow-list, which Codex had no equivalent of - so the
- * question is whether `--allowed-tools` actually removes the capability or
- * merely discourages its use. Assume nothing until a prompt that explicitly
- * asks for a web search comes back unable to perform one.
+ * What a stub cannot tell you is whether the policy is obeyed, and that is the
+ * only question that decides whether Gemini can be Axune's second agent.
+ *
+ * **The first task on a working account is a breach attempt, not a
+ * hello-world.** Gemini CLI ships web search and web fetch, the same egress
+ * exposure that disqualified Codex: a fetch combined with any secret read is a
+ * complete exfiltration path. The reason to expect a different outcome is
+ * `--admin-policy` - a per-spawn tier-5 layer that Codex had no equivalent of,
+ * since Codex's only working lever was a machine-wide file. Assume nothing
+ * until a prompt that explicitly asks for a web search comes back unable to
+ * perform one. Until then `start()` refuses write runs outright, which is the
+ * right direction to be wrong in.
  */
 export class GeminiAdapter implements AgentAdapter {
   readonly agentId = 'gemini-cli' as const;
@@ -76,6 +82,15 @@ export class GeminiAdapter implements AgentAdapter {
     let providerSessionId: string | null = null;
     let child: ChildProcessWithoutNullStreams | null = null;
     let stopping = false;
+    let policyDir: string | null = null;
+    // `--max-turns` does not exist on this CLI - it is rejected exactly like an
+    // invented flag, which is why no Gemini run could ever start. Its
+    // replacement, `model.maxSessionTurns`, is a settings key rather than a
+    // flag and defaults to unlimited, so a ceiling passed at spawn time is not
+    // available at all. Axune counts and stops instead: enforcement it owns
+    // beats a flag it hopes exists, which is the lesson from every containment
+    // question this month.
+    let turns = 0;
 
     const emit = (body: Record<string, unknown>) => {
       onEvent({
@@ -117,7 +132,15 @@ export class GeminiAdapter implements AgentAdapter {
 
       try {
         emit({ type: 'working', label: 'Gemini is working' });
-        child = spawn(this.binary, this.argsFor(request), {
+
+        // One policy file per run, in a directory only this process knows
+        // about. Written here rather than shipped so there is nothing on disk
+        // between runs, and so a bundler never has to resolve a path to it.
+        policyDir = await mkdtemp(join(tmpdir(), 'axune-gemini-'));
+        const policyPath = join(policyDir, 'axune-contain.toml');
+        await writeFile(policyPath, CONTAINMENT_POLICY, 'utf8');
+
+        child = spawn(this.binary, this.argsFor(request, policyPath), {
           cwd: request.cwd,
           windowsHide: true,
           // Only batch shims genuinely need a shell, and nothing
@@ -152,12 +175,31 @@ export class GeminiAdapter implements AgentAdapter {
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
+            // Killing the child does not un-buffer what it already sent. A
+            // burst can carry hundreds of records in one chunk, so without
+            // this the ceiling would fire and then emit every remaining call
+            // anyway - a limit that reports itself and enforces nothing.
+            if (stopping) break;
             for (const event of this.translate(trimmed)) {
               if (event['__sessionId']) {
                 providerSessionId = String(event['__sessionId']);
                 continue;
               }
               emit(event);
+
+              // The ceiling, enforced here because the CLI offers no way to
+              // pass one. A confused agent can loop a long time, and every
+              // turn spends the user's own subscription allowance.
+              if (stopping) break;
+              if (event['type'] === 'tool_started' && ++turns > MAX_TURNS) {
+                emit({
+                  type: 'error',
+                  message: `Stopped after ${MAX_TURNS} tool calls. Axune enforces this ceiling itself because the Gemini CLI has no flag for it.`,
+                  recoverable: false,
+                });
+                stopping = true;
+                child?.kill();
+              }
             }
           }
         });
@@ -174,7 +216,7 @@ export class GeminiAdapter implements AgentAdapter {
         });
 
         const code = await finished;
-        if (buffer.trim()) {
+        if (buffer.trim() && !stopping) {
           for (const event of this.translate(buffer.trim())) {
             if (!event['__sessionId']) emit(event);
           }
@@ -197,6 +239,12 @@ export class GeminiAdapter implements AgentAdapter {
         }
       }
 
+      // The policy has done its job by now, and leaving it behind would put a
+      // file on disk that looks authoritative and governs nothing.
+      if (policyDir) {
+        await rm(policyDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+
       emit({ type: 'run_finished', outcome });
       return { runId: request.runId, providerSessionId, outcome };
     })();
@@ -215,15 +263,38 @@ export class GeminiAdapter implements AgentAdapter {
   /**
    * The command line for one run.
    *
-   * **Unverified.** Every flag here comes from documentation rather than from
-   * running it. `--allowed-tools` is the load-bearing one: it is the mechanism
-   * Codex lacked, and the entire reason Gemini is worth trying. It is passed a
-   * positive list, never a deny list - with `Write` blocked, an agent here once
-   * reached for PowerShell instead, and only an allow-list caught it.
+   * **Every flag here is checked against `gemini --help` on 0.60.0**, which the
+   * previous version was not, and it did not survive the check:
    *
-   * Deliberately absent: anything granting web access. `google_web_search` and
-   * `web_fetch` are not on the list, and must be confirmed *unavailable* rather
-   * than merely unlisted.
+   * - `--max-turns` **does not exist**. The CLI rejects it identically to a flag
+   *   invented as a control, so no run could ever have started. Gone; the
+   *   ceiling is counted in `start()` instead.
+   * - `--allowed-tools` is deprecated *and* was never an allow-list. It marks
+   *   tools "allowed to run without confirmation" - so passing it a read-only
+   *   list auto-**approved** those tools and said nothing about the dangerous
+   *   ones. The line believed to be the boundary was the inverse of one.
+   * - `--prompt` is required for headless mode. Without it the CLI defaults to
+   *   its interactive TUI, so a run would hang rather than fail.
+   *
+   * Containment now comes from `--admin-policy`, the tier-5 layer, which is the
+   * mechanism Codex genuinely lacked: Codex's only working lever was a
+   * machine-wide file, and this is a per-spawn flag Axune owns entirely.
+   *
+   * **Still unverified: whether any of it holds.** The flags parse - but that
+   * is worth nothing here, and the control proves it: passing `--admin-policy`
+   * a directory containing deliberately invalid TOML produces **no error at
+   * all**, reaching the auth prompt identically to the valid policy. So either
+   * the file is parsed lazily at the first tool call, or a bad one is silently
+   * ignored, and from outside an account those are indistinguishable.
+   *
+   * That is the same shape as the workspace tier being non-functional: a policy
+   * that quietly does not apply is worse than no policy, because the belief in
+   * containment is what makes someone point an agent at a private repository.
+   * So nothing here may be trusted until a run has been watched refusing
+   * something. `google_web_search` and `web_fetch` must be confirmed
+   * *unavailable* rather than merely denied on paper - the shipped
+   * `read-only.toml` allows web search, which is exactly how a mode named
+   * read-only leaks.
    *
    * **The prompt is not here, on purpose.** It arrives from the phone, so it is
    * the one genuinely untrusted string in a run, and on Windows a `.cmd` shim
@@ -233,14 +304,31 @@ export class GeminiAdapter implements AgentAdapter {
    * a command line. Node's own deprecation warning about shell arguments is
    * what surfaced this.
    */
-  private argsFor(request: RunRequest): string[] {
+  private argsFor(request: RunRequest, policyPath: string): string[] {
     return [
       '--output-format',
       'stream-json',
-      '--allowed-tools',
-      READ_ONLY_TOOLS.join(','),
-      '--max-turns',
-      String(MAX_TURNS),
+      // Tier 5. Outranks user, workspace, extension and default policy, and is
+      // the only tier that does: workspace policies are documented as
+      // non-functional in 0.60.0 (issue #18186), so the obvious place to put a
+      // per-project policy would load, report nothing, and not apply.
+      '--admin-policy',
+      policyPath,
+      // Read-only mode, as a second line rather than the first. On its own it
+      // is not enough - the shipped read-only policy *allows* google_web_search
+      // - but it constrains anything the policy above fails to name.
+      '--approval-mode',
+      'plan',
+      // Headless. Without this the CLI defaults to its interactive TUI and a
+      // run would hang rather than fail. Empty because the prompt itself
+      // arrives on stdin, and `--prompt` is documented as appended to stdin
+      // rather than replacing it.
+      '--prompt',
+      '',
+      // The workspace is untrusted on purpose: trusting it lets a repository's
+      // own .gemini directory supply hooks and MCP servers, which is exactly
+      // the injection path Axune exists to close. So `--skip-trust` is absent,
+      // deliberately, and its absence is the safe direction.
       ...(request.resumeSessionId ? ['--resume', request.resumeSessionId] : []),
     ];
   }
@@ -290,7 +378,10 @@ export class GeminiAdapter implements AgentAdapter {
             type: 'tool_started',
             toolCallId: String(record['id'] ?? record['call_id'] ?? `gemini-${type}`),
             toolName: String(record['name'] ?? record['tool'] ?? 'unknown'),
-            input: safeStringify(record['args'] ?? record['input'] ?? {}),
+            // Same reason as the Claude Code adapter: this reaches the phone
+            // and the activity log, so an unmasked credential here is a
+            // credential in two more places.
+            input: redactSecrets(safeStringify(record['args'] ?? record['input'] ?? {})),
           },
         ];
 
@@ -300,7 +391,9 @@ export class GeminiAdapter implements AgentAdapter {
             type: 'tool_finished',
             toolCallId: String(record['id'] ?? record['call_id'] ?? `gemini-${type}`),
             ok: record['error'] === undefined && record['is_error'] !== true,
-            output: pickText(record) || safeStringify(record['result'] ?? ''),
+            // Tool results carry file contents, which is where a hardcoded key
+            // in an ordinary source file would otherwise travel from.
+            output: redactSecrets(pickText(record) || safeStringify(record['result'] ?? '')),
           },
         ];
 
@@ -333,19 +426,53 @@ export class GeminiAdapter implements AgentAdapter {
 }
 
 /**
- * What a Gemini read-only run may use.
+ * What a Gemini read-only run may use, as a policy rather than a flag.
  *
- * A positive list, and network tools are absent rather than excluded. Names are
- * taken from documentation and are unverified; if one is wrong the run will
- * fail loudly, which is the right direction to be wrong in.
+ * `--allowed-tools`, which this replaces, was never an allow-list: the CLI
+ * documents it as tools "allowed to run **without confirmation**", so passing a
+ * read-only list to it auto-*approved* those tools and said nothing at all
+ * about the dangerous ones. It is also deprecated in favour of this engine.
+ *
+ * Deny-by-default, then allow back by name. Scoping by resource beats
+ * enumerating what is forbidden, because a wildcard deny cannot fall out of
+ * date when a new tool ships whereas an exclusion list must be kept complete by
+ * someone who remembers to.
+ *
+ * `denyMessage` is not decoration. A refusal that says what and why costs
+ * nothing and saves the run; the forty seconds an agent once spent being
+ * refused by an unexplained boundary is the reason that rule exists.
+ *
+ * Embedded as a string and written per run rather than shipped as a file, so
+ * there is no path to resolve through a bundler and nothing on disk between
+ * runs for anything else to edit.
+ *
+ * **Unverified.** Every claim about what this achieves needs a run that tries
+ * to break it. The tool names come from the shipped `read-only.toml`.
  */
-const READ_ONLY_TOOLS = [
-  'read_file',
-  'read_many_files',
-  'list_directory',
-  'glob',
-  'search_file_content',
-] as const;
+const CONTAINMENT_POLICY = `# Written by Axune for one run. Not user-editable by design.
+[[rule]]
+toolName = "*"
+decision = "deny"
+priority = 100
+denyMessage = "Axune runs this agent read-only. This tool is not on the allow-list."
+
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "grep_search"]
+decision = "allow"
+priority = 200
+
+[[rule]]
+toolName = ["google_web_search", "web_fetch"]
+decision = "deny"
+priority = 900
+denyMessage = "Axune denies network egress. Your code does not leave this machine."
+
+[[rule]]
+toolName = ["run_shell_command", "write_file", "replace", "save_memory"]
+decision = "deny"
+priority = 900
+denyMessage = "Axune denies writes and shell execution in a read-only run."
+`;
 
 /**
  * Does spawning this binary require a shell?

@@ -18,7 +18,7 @@
  *
  * Costs nothing: no agent, no network, no usage.
  */
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -245,6 +245,100 @@ async function main() {
       return `FAIL: the prompt did not arrive on stdin - got "${text}"`;
     }
     return 'no command ran, and the prompt arrived intact on stdin';
+  });
+
+  // ---- the command line itself -------------------------------------------
+  //
+  // Nothing tested argv, and that is exactly how three bugs lived here at once:
+  // `--max-turns` did not exist on the real CLI and was rejected like an
+  // invented flag, so no run could ever start; `--allowed-tools` was an
+  // auto-approve list rather than an allow-list, so the line believed to be
+  // the boundary was the inverse of one; and `--prompt` was missing, so the CLI
+  // would have opened its interactive TUI and hung. A stub accepts anything,
+  // which is why every one of them passed.
+
+  /** A stub that records the argv it was given, plus any policy file it was handed. */
+  function argvStub(name: string): { shim: string; read: () => { argv: string[]; policy: string | null } } {
+    const out = join(scratch, `${name}.argv.json`);
+    const path = join(scratch, `${name}.js`);
+    writeFileSync(
+      path,
+      [
+        'const fs = require("fs");',
+        'const argv = process.argv.slice(2);',
+        'const i = argv.indexOf("--admin-policy");',
+        'let policy = null;',
+        // The flag takes "policy files or directories", so handle both rather
+        // than assuming the shape the adapter happens to use today.
+        'if (i >= 0 && argv[i + 1]) {',
+        '  try {',
+        '    const target = argv[i + 1];',
+        '    if (fs.statSync(target).isDirectory()) {',
+        '      const f = fs.readdirSync(target).find((n) => n.endsWith(".toml"));',
+        '      policy = f ? fs.readFileSync(require("path").join(target, f), "utf8") : null;',
+        '    } else {',
+        '      policy = fs.readFileSync(target, "utf8");',
+        '    }',
+        '  } catch { policy = null; }',
+        '}',
+        'fs.writeFileSync(' + JSON.stringify(out) + ', JSON.stringify({ argv, policy }));',
+        'setTimeout(() => process.exit(0), 30);',
+      ].join('\n'),
+    );
+    const shim = join(scratch, `${name}.cmd`);
+    writeFileSync(shim, `@echo off\r\nnode "${path}" %*\r\n`);
+    return { shim, read: () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; policy: string | null } };
+  }
+
+  await check('no flag is passed that the real CLI rejects', async () => {
+    const { shim, read } = argvStub('argv');
+    await collect(shim);
+    const { argv } = read();
+
+    // Verified against `gemini --help` on 0.60.0: both of these are rejected or
+    // deprecated, and --max-turns is rejected identically to a made-up flag.
+    for (const gone of ['--max-turns', '--allowed-tools']) {
+      if (argv.includes(gone)) return `FAIL: still passing ${gone}`;
+    }
+    for (const needed of ['--output-format', '--admin-policy', '--approval-mode', '--prompt']) {
+      if (!argv.includes(needed)) return `FAIL: missing ${needed}`;
+    }
+    // Absent on purpose: trusting the workspace lets a repository's own
+    // .gemini directory supply hooks and MCP servers.
+    if (argv.includes('--skip-trust')) return 'FAIL: the workspace is being trusted';
+    return `argv is ${argv.length} items, none of them rejected by 0.60.0`;
+  });
+
+  await check('the containment policy reaches the CLI and is gone afterwards', async () => {
+    const { shim, read } = argvStub('policy');
+    await collect(shim);
+    const { argv, policy } = read();
+    if (!policy) return 'FAIL: no policy file existed at the path that was passed';
+    if (!policy.includes('toolName = "*"')) return 'FAIL: the wildcard deny is missing';
+    if (!policy.includes('google_web_search')) return 'FAIL: web search is not denied by name';
+    if (!policy.includes('run_shell_command')) return 'FAIL: shell execution is not denied by name';
+
+    // Left behind, it would be a file that looks authoritative and governs
+    // nothing - the same shape as a workspace policy silently not applying.
+    const dir = argv[argv.indexOf('--admin-policy') + 1]!;
+    if (existsSync(dir)) return 'FAIL: the policy directory survived the run';
+    return 'policy delivered with its denies intact, and removed when the run ended';
+  });
+
+  await check('a looping agent is stopped even though the CLI has no ceiling flag', async () => {
+    // MAX_TURNS is 60 and cannot be passed to this CLI at all, so Axune counts.
+    // Without this an agent could loop indefinitely on the user's own quota.
+    const calls = Array.from({ length: 70 }, (_, i) =>
+      JSON.stringify({ type: 'tool_call', id: `t${i}`, name: 'read_file', args: { path: 'a.ts' } }) + LF,
+    );
+    const { events, result } = await collect(stub('loop', calls));
+    const started = events.filter((e) => (e as { type: string }).type === 'tool_started').length;
+    if (started > 61) return `FAIL: ${started} tool calls got through`;
+    const ceiling = events.find((e) =>
+      String((e as { message?: string }).message ?? '').includes('Stopped after'),
+    );
+    if (!ceiling) return `FAIL: no ceiling error, outcome was ${result.outcome}`;
+    return `stopped after ${started} tool calls, with a reason`;
   });
 
   rmSync(scratch, { recursive: true, force: true });

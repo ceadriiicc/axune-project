@@ -60,3 +60,24 @@ export function shouldShield(state: AppStateName | null | undefined): boolean {
 export function isSnapshotRisk(state: AppStateName | null | undefined): boolean {
   return state === 'inactive' || state === 'background';
 }
+
+/**
+ * Whether screen recording should be blocked.
+ *
+ * Lives here rather than beside the native call because that module imports
+ * `expo-screen-capture`, which cannot load under Node - and this is the half
+ * with a way to go wrong. The same split as everywhere else: the decision is
+ * testable, the drawing is not.
+ *
+ * Deliberately biased. Anything unrecognisable, including a value from an older
+ * build or a half-written keychain entry, means *on*. The two ways to be wrong
+ * are not equal: a wrongly-guarded screen is an annoyance during a demo, a
+ * wrongly-unguarded one is source code in a video somebody already published.
+ */
+export function parseCaptureGuard(raw: string | null | undefined): boolean {
+  return raw !== 'off';
+}
+
+export function serializeCaptureGuard(on: boolean): string {
+  return on ? 'on' : 'off';
+}

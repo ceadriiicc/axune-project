@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 
 import { spacing } from '@/constants/theme';
+import { applyCaptureGuard, loadCaptureGuard } from '@/lib/captureGuard';
 import { shouldShield } from '@/lib/screenShield';
 import { useTheme } from '@/lib/ThemeContext';
 
@@ -30,6 +31,14 @@ export function PrivacyShield() {
   useEffect(() => {
     const sub = AppState.addEventListener('change', setState);
     return () => sub.remove();
+  }, []);
+
+  // Applied here because this component is mounted once, at the root, for the
+  // life of the app. The setting is read rather than assumed: it defaults to
+  // guarded, and Settings writes it and applies it immediately, so the two
+  // never need to agree through shared state.
+  useEffect(() => {
+    void loadCaptureGuard().then(applyCaptureGuard);
   }, []);
 
   if (!shouldShield(state)) return null;
