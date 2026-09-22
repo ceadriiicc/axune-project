@@ -12,3 +12,6 @@ npm-debug.log*
 # Electron build output
 apps/desktop/dist/
 apps/desktop/renderer/renderer.js
+
+# Output from the brag skill - generated, not source
+brag-output/

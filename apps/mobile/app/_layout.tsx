@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { PrivacyShield } from '@/components/ui/PrivacyShield';
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
 import { WorkspaceProvider } from '@/lib/WorkspaceContext';
 
@@ -53,6 +54,11 @@ function Shell() {
       >
         <Stack.Screen name="(tabs)" />
       </Stack>
+      {/*
+       * Last, so it draws over every screen and any sheet pushed on top of
+       * them. A cover that something else can render above is not a cover.
+       */}
+      <PrivacyShield />
     </>
   );
 }
