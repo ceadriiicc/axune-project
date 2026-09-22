@@ -88,7 +88,13 @@ export class PairingManager {
 
     issued.consumed = true;
     const sessionToken = randomBytes(32).toString('base64url');
-    this.paired.set(sessionToken, { deviceName, pairedAt: Date.now() });
+    // Keyed by hash, like every other write to this map. It was keyed by the
+    // raw token, which was missed when devices started being hashed, and the
+    // mismatch was invisible from here: pairing worked, the phone got a valid
+    // token, and only `isPaired` disagreed - it hashes what it is given and so
+    // could never match a raw key. Every reconnect was therefore refused and
+    // every returning phone was told to scan a new code.
+    this.paired.set(deviceKey(sessionToken), { deviceName, pairedAt: Date.now() });
     return { ok: true, sessionToken, deviceName };
   }
 

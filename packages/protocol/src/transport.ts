@@ -122,7 +122,18 @@ export type ServerMessage =
       capability: Capability;
       protocolVersion: number;
     }
-  | { type: 'pair_rejected'; reason: 'bad_token' | 'expired' | 'version_mismatch'; detail: string }
+  /**
+   * `not_paired` is not a pairing failure but a command sent before pairing.
+   * It shares this message because the phone's handling is already right for
+   * it: stop retrying, show the detail. Previously such a command was dropped
+   * by a bare `return`, which is correct security and terrible behaviour - the
+   * phone waited for a reply that was never coming.
+   */
+  | {
+      type: 'pair_rejected';
+      reason: 'bad_token' | 'expired' | 'version_mismatch' | 'not_paired';
+      detail: string;
+    }
   /** A replayed or live agent event. Replays carry `replayed: true`. */
   | { type: 'event'; event: AgentEvent; replayed?: boolean }
   /** Sent after a resume, before any replayed events, so the phone can show a gap honestly. */

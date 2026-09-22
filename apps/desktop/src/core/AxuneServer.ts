@@ -368,8 +368,22 @@ export class AxuneServer {
       return;
     }
 
-    // Everything below requires a paired socket.
-    if (!this.authed.has(socket)) return;
+    // Everything below requires a paired socket. Refused out loud rather than
+    // dropped: this was a bare `return`, which denied correctly and told the
+    // phone nothing, so a phone in this state waited for a reply that was
+    // never coming. A refusal that says what and why costs nothing and is the
+    // difference between a bug report and a mystery.
+    //
+    // Nothing is leaked by saying so. The peer has already completed the
+    // encrypted handshake, so it knows the desktop is here; what it does not
+    // have is a pairing, and telling it that is what lets it stop waiting.
+    if (!this.authed.has(socket)) {
+      return this.send(socket, {
+        type: 'pair_rejected',
+        reason: 'not_paired',
+        detail: 'This device is not paired with the desktop. Scan the pairing code again.',
+      });
+    }
 
     if (message.type === 'ping') return this.send(socket, { type: 'pong' });
 
