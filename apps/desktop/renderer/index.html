@@ -77,7 +77,13 @@
       #open { min-height: 36px; padding: 6px 10px; font-size: 12px; }
       .agents-section { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
       #agents { display: grid; gap: 10px; margin-top: 10px; }
-      .agent { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .agent { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
+      .agent-help { flex-basis: 100%; min-width: 0; }
+      .agent-detail { color: var(--muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+      .agent-copy { margin-top: 6px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+      .agent-copy-status { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+      #agentsBlocked { margin-top: 10px; padding: 12px; border: 1px solid var(--danger); border-radius: 14px; color: var(--text); overflow-wrap: anywhere; }
+      #agentsBlocked strong { display: block; color: var(--danger); }
       .agent-mark { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 11px; background: #3b434d; color: #e7edf3; font-size: 14px; font-weight: 650; }
       .agent[data-agent="claude-code"] .agent-mark { background: #60462d; color: #f0d8bf; }
       .agent[data-agent="codex"] .agent-mark { background: #24474e; color: #bfe8ea; }
@@ -155,6 +161,7 @@
           </div>
           <div class="agents-section">
             <h3>Local agents</h3>
+            <p id="agentsBlocked" role="status" hidden><strong>Setup required: no agents installed.</strong>Axune cannot run any agent until at least one is installed. See the agent details below.</p>
             <div id="agents"><p class="empty">Waiting for agent status…</p></div>
           </div>
         </section>

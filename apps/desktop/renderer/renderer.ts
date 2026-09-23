@@ -91,6 +91,7 @@ function addLine(text: string, at = Date.now(), isError = false): void {
   feed.querySelector('.empty')?.remove();
   const row = document.createElement('div');
   row.className = isError ? 'line error' : 'line';
+  row.dataset.at = String(at);
   const time = document.createElement('time');
   time.className = 'time';
   const date = new Date(at);
@@ -101,7 +102,10 @@ function addLine(text: string, at = Date.now(), isError = false): void {
   body.className = 'txt';
   body.textContent = text;
   row.append(time, body);
-  feed.prepend(row);
+  // Late/replayed events belong at their event time, not their arrival time.
+  // Equal timestamps retain arrival order; trim only after ordering.
+  const older = Array.from(feed.children).find((child) => Number((child as HTMLElement).dataset.at) < at);
+  feed.insertBefore(row, older ?? null);
   while (feed.children.length > 40) feed.lastElementChild?.remove();
 }
 
@@ -120,6 +124,7 @@ window.axune.on('ready', (data) => {
   for (const id of ['choose', 'open', 'refresh']) button(id).disabled = false;
   const agents = $('agents');
   agents.replaceChildren();
+  $('agentsBlocked').hidden = !data.agents.length || data.agents.some((agent) => agent.installed);
   for (const agent of data.agents) {
     const row = document.createElement('div');
     row.className = 'agent';
@@ -149,6 +154,35 @@ window.axune.on('ready', (data) => {
       state.classList.add('available');
     } else state.textContent = 'Installed · sign-in unknown';
     row.append(mark, info, state);
+    if ((!agent.installed || agent.authenticated === 'no') && agent.detail) {
+      const help = document.createElement('div');
+      help.className = 'agent-help';
+      const detail = document.createElement('p');
+      detail.className = 'agent-detail';
+      detail.textContent = agent.detail;
+      // Extract only the command explicitly supplied by detection. If its
+      // wording is different, preserve and copy the complete detail instead.
+      const command = /Install it with:[ \t]*([^\r\n]+?)(?=[ \t]+\(Error:|[\r\n]|$)/.exec(agent.detail)?.[1];
+      const copyText = command ?? agent.detail;
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'agent-copy';
+      copy.textContent = command ? 'Copy install command' : 'Copy details';
+      copy.setAttribute('aria-label', `${copy.textContent} for ${agentName(agent.agentId)}`);
+      const status = document.createElement('p');
+      status.className = 'agent-copy-status';
+      status.setAttribute('role', 'status');
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(copyText);
+          status.textContent = command ? 'Install command copied.' : 'Details copied.';
+        } catch {
+          status.textContent = 'Could not copy. Select and copy the text above.';
+        }
+      });
+      help.append(detail, copy, status);
+      row.append(help);
+    }
     agents.append(row);
   }
   if (!data.agents.length) {
