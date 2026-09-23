@@ -73,7 +73,15 @@ export default function PairScreen() {
   const confirm = useCallback(() => {
     if (!pending) return;
     pair(pending);
-    router.replace('/workspace');
+    // Home, not Workspace. This said '/workspace' from when that screen lived
+    // inside the tab bar; the migration moved it out and left the redirect
+    // behind, so pairing deposited a brand new user on a screen with no tabs
+    // and no back button - stuck until they force-quit the app.
+    //
+    // It survived because it is reachable exactly once, on the pairing path,
+    // and the route still resolved: nothing errored, it just went somewhere
+    // that used to be somewhere else.
+    router.replace('/(tabs)');
   }, [pending, pair, router]);
 
   if (!permission) {

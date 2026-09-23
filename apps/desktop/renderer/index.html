@@ -101,6 +101,11 @@
       .pairing-copy { min-width: 0; }
       .pairing-copy p { color: var(--muted); font-size: 12px; line-height: 1.6; }
       .pairing-copy strong { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+      .verify-label { margin-top: 12px; font-size: 11px; color: var(--muted); }
+      /* Large and monospaced because it is read off one screen and compared on
+         another, in a hurry. A code that is hard to compare at a glance trains
+         people to skip comparing it. */
+      .verify-code { margin-top: 2px; font-size: 20px; font-weight: 600; letter-spacing: 0.12em; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--text); }
       #expiry { margin-top: 12px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
       #expiry.expired { color: var(--claude); }
       .network { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -175,6 +180,8 @@
             <div class="pairing-copy">
               <strong>Continue from your phone.</strong>
               <p>Scan in Axune Mobile with both devices on the same network.</p>
+              <p class="verify-label">After scanning, your phone shows three codes. Tap this one:</p>
+              <p id="fingerprint" class="verify-code">—</p>
               <p id="expiry"></p>
             </div>
           </div>

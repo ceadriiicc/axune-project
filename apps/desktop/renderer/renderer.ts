@@ -7,6 +7,8 @@ interface ReadyPayload {
   agents: AgentStatus[];
   pairing: PairingPayload;
   address: string;
+  /** The code the phone asks you to match after scanning. Optional so an older main process does not break the window. */
+  fingerprint?: string;
 }
 
 interface RendererEvents {
@@ -121,6 +123,10 @@ window.axune.on('ready', (data) => {
   $('path').textContent = data.project.path;
   $('branch').textContent = data.project.branch;
   $('branchMeta').hidden = !data.project.branch;
+  // textContent, like everything else here. An em dash rather than an empty
+  // space when absent, so a missing code reads as missing instead of as a
+  // layout gap somebody scrolls past.
+  $('fingerprint').textContent = data.fingerprint ?? '—';
   for (const id of ['choose', 'open', 'refresh']) button(id).disabled = false;
   const agents = $('agents');
   agents.replaceChildren();

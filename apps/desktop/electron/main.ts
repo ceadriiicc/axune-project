@@ -147,6 +147,19 @@ async function startServer(repo: string): Promise<void> {
     // reach this one without rescanning, so silence here would look like the
     // phone being broken.
     portFallback: bound.wasPreferred ? null : boundPort,
+    // The number the phone asks you to match after scanning.
+    //
+    // The phone has always shown three codes and asked which one the desktop
+    // displays; the desktop has never displayed any of them. `DeviceIdentity`
+    // has computed this all along and `tryTransport` asserts both ends derive
+    // the same value - two things agreeing with each other while neither
+    // reached the window. `npm run serve` prints it, which is why nobody
+    // noticed.
+    //
+    // It is the worst possible thing to leave missing: a verification step you
+    // cannot complete teaches people to tap any of the three to get past it,
+    // which is precisely the check that catches a substituted desktop.
+    fingerprint: server.identity.fingerprint,
   });
 
   // A remembered project that has since vanished is worth saying out loud
