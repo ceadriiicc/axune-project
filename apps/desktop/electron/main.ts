@@ -125,7 +125,15 @@ async function startServer(repo: string): Promise<void> {
     isGitRepo: isRepoBranch(branch),
   });
 
-  server.onEvent((event: AgentEvent) => send('agent-event', event));
+  server.onEvent((event: AgentEvent) => {
+    // Errors go to the terminal as well as the phone. The phone currently
+    // renders a failed run as the word "failed" and nothing else, so the only
+    // copy of the reason was being delivered to a screen that does not show it.
+    if (event.type === 'error') {
+      console.error(`[axune] run error: ${event.message}`);
+    }
+    send('agent-event', event);
+  });
   server.onConnectionChange((state: string) => send('connection', state));
   server.activityLog.onEvent((event) => send('activity', event));
 

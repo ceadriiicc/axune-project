@@ -45,6 +45,16 @@ export interface LiveRun {
   activity: ActivityLine[];
   status: 'working' | 'finished' | 'stopped' | 'failed';
   outcome: string | null;
+  /**
+   * Why it failed, in words, when the desktop said.
+   *
+   * Separate from `outcome`, which carries either a status word from
+   * `run_finished` or an error message from `error`, depending on which
+   * arrived last. That overloading is how the reason went missing: the message
+   * was stored and then never read, so a failed run rendered as the single
+   * word "failed" while the desktop had already sent an explanation.
+   */
+  error: string | null;
   /** For elapsed time, and for spotting a run that has gone quiet. */
   startedAt: number | null;
   lastEventAt: number | null;
@@ -143,6 +153,7 @@ const emptyRun = (runId: string, prompt: string): LiveRun => ({
   prompt,
   text: '',
   activity: [],
+  error: null,
   status: 'working',
   outcome: null,
   startedAt: Date.now(),
@@ -589,7 +600,12 @@ function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
         outcome: event.outcome,
       };
     case 'error':
-      return { ...run, status: 'failed', outcome: event.message };
+      // A recoverable error is a note, not an ending - the run carries on, and
+      // marking it failed here would have the card contradict the reply still
+      // arriving underneath it.
+      return event.recoverable
+        ? { ...run, error: event.message }
+        : { ...run, status: 'failed', outcome: event.message, error: event.message };
     default:
       return run;
   }

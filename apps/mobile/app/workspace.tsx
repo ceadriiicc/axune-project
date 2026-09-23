@@ -293,6 +293,13 @@ function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
         </Text>
       ) : null}
 
+      {/*
+        The reason, which the desktop has always sent and this card has always
+        thrown away — a failed run read as the single word "failed" with no way
+        to find out why, on the phone or anywhere else.
+      */}
+      {run.error ? <Text style={styles.failure}>{run.error}</Text> : null}
+
       {run.text ? (
         <View style={[styles.answer, { backgroundColor: agent.bubbleBg }]}>
           <AgentText text={run.text} style={{ color: agent.bubbleText }} />
@@ -456,6 +463,10 @@ function useStyles() {
     panelAgent: { fontSize: 13, fontWeight: '700' },
     panelStatus: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
     doing: { color: color.claudeText, fontSize: 11.5 },
+    // Readable rather than a warning stripe: this is usually something the
+    // person can act on ("not a git repository", "read-only run"), so it earns
+    // body-text size instead of fine print.
+    failure: { color: color.danger, fontSize: 13, lineHeight: 18 },
     thinking: { color: color.textSoft, fontSize: 13, fontStyle: 'italic' },
     answer: { borderRadius: radius.sm, padding: spacing.sm },
     stop: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },

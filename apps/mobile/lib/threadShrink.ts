@@ -125,6 +125,10 @@ function trimRun(run: LiveRun, textLimit: number): LiveRun {
     ...run,
     text: cap(run.text, textLimit, 'reply'),
     activity: run.activity.slice(-MAX_ACTIVITY),
+    // A thread written by a build that predates this field arrives without it.
+    // Defaulted here rather than left undefined so a restored run cannot be a
+    // shape the rest of the app does not expect.
+    error: run.error ?? null,
     changes: run.changes
       ? { ...run.changes, patch: cap(run.changes.patch, MAX_PATCH, 'diff') }
       : null,
