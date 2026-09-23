@@ -68,6 +68,15 @@ export interface AgentStatus {
   version: string | null;
   /** Claude Code has no "am I logged in" command; `unknown` is honest. */
   authenticated: 'yes' | 'no' | 'unknown';
+  /**
+   * One line a person can act on, from the adapter's own detection.
+   *
+   * The adapters have always produced this - "gemini not found on PATH: ..." -
+   * and `agentStatuses` threw it away, so both the window and the phone could
+   * say an agent was missing and never why. "Not installed" is a status; this
+   * is the difference between a status and something you can do next.
+   */
+  detail?: string;
 }
 
 /** Phone → Desktop. */

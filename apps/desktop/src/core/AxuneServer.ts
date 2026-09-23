@@ -214,6 +214,10 @@ export class AxuneServer {
           installed: detection.installed,
           version: detection.version,
           authenticated: detection.authenticated,
+          // Carried through rather than dropped. The adapter already writes a
+          // line worth reading - which binary it looked for, and why it failed
+          // - and without it "Not installed" is a dead end on both screens.
+          detail: detection.detail,
         };
       }),
     );

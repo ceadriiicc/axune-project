@@ -82,7 +82,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         installed: false,
         version: null,
         authenticated: 'no',
-        detail: `claude not found on PATH: ${describeError(error)}`,
+        // What to do, not only what went wrong. A person reading "not found on
+        // PATH" still has to go and find out what to install; the reason is
+        // kept because it distinguishes a missing CLI from a broken one, but it
+        // no longer arrives alone.
+        detail: `Claude Code is not installed. Install it with: npm install -g @anthropic-ai/claude-code (${describeError(error)})`,
       };
     }
   }

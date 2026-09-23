@@ -72,7 +72,7 @@ export class GeminiAdapter implements AgentAdapter {
         installed: false,
         version: null,
         authenticated: 'no',
-        detail: `gemini not found on PATH: ${describeError(error)}`,
+        detail: `Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli (${describeError(error)})`,
       };
     }
   }
