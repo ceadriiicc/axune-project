@@ -12,6 +12,7 @@
  * error in, so a damaged one must degrade rather than throw. An app that will
  * not open cannot be used to fix its own settings.
  */
+import { rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,6 +20,7 @@ import { AxuneServer } from './core/AxuneServer';
 import { DEFAULT_SETTINGS, parseSettings, serializeSettings } from './core/desktopSettings';
 import { DeviceIdentity } from './core/DeviceIdentity';
 import { PairingManager } from './core/PairingManager';
+import { FOLDER_MISSING, NOT_A_REPO, isRepoBranch, projectReadable } from './core/projectProbe';
 import { SessionStore } from './core/SessionStore';
 
 let failures = 0;
@@ -125,6 +127,42 @@ check('a plain folder is not advertised as writable', () => {
   const repo = serverFor(true).capability();
   if (repo !== 'read-write') return `FAIL: a real repository claims ${repo}`;
   return 'read-only for a plain folder, read-write for a repository';
+});
+
+// ---- a project folder that is gone ---------------------------------------
+
+check('a missing folder is not mistaken for a repository', () => {
+  // The check in main.ts was `branch !== '(not a git repo)'`. Correct while
+  // that was the only sentinel, and wrong the instant a second one existed: a
+  // folder that does not exist would have been called a git repository, and
+  // `capability()` reads this to decide whether the phone may ask for writes.
+  if (isRepoBranch(FOLDER_MISSING)) return 'FAIL: a missing folder counts as a repository';
+  if (isRepoBranch(NOT_A_REPO)) return 'FAIL: a plain folder counts as a repository';
+  if (!isRepoBranch('main')) return 'FAIL: a real branch was rejected';
+  if (!isRepoBranch('axune/desktop-lifecycle')) return 'FAIL: a slashed branch was rejected';
+  return 'both sentinels excluded, real branch names accepted';
+});
+
+check('a missing folder and a plain folder are distinguishable', () => {
+  // They used to report the same string, so "your project is gone" and "you
+  // picked a folder that is not a repository" looked identical - and only one
+  // of them is something the person chose.
+  //
+  // That the two labels differ is not asserted here: they are literal types,
+  // and the compiler rejected the comparison as statically impossible, which
+  // is a better guarantee than a runtime check. What is worth asserting is the
+  // part the compiler cannot see - what the filesystem actually says.
+  if (projectReadable(join(tmpdir(), `definitely-not-here-${Date.now()}`))) {
+    return 'FAIL: a path that does not exist reported as readable';
+  }
+  if (!projectReadable(tmpdir())) return 'FAIL: a real directory reported as unreadable';
+  // A file is not a project directory, and statSync succeeds on one.
+  const file = join(tmpdir(), `axune-probe-${Date.now()}.txt`);
+  writeFileSync(file, 'x');
+  const fileIsProject = projectReadable(file);
+  rmSync(file, { force: true });
+  if (fileIsProject) return 'FAIL: a file was accepted as a project directory';
+  return 'missing, present and not-a-directory all told apart';
 });
 
 console.log(failures === 0 ? '\nall checks passed\n' : `\n${failures} check(s) failed\n`);

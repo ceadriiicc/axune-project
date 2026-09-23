@@ -14,6 +14,7 @@ import {
   type DesktopSettings,
 } from '../src/core/desktopSettings';
 import { PairingManager, lanAddress } from '../src/core/PairingManager';
+import { FOLDER_MISSING, NOT_A_REPO, isRepoBranch, projectReadable } from '../src/core/projectProbe';
 import { AXUNE_PORT, listenOnKnownPort } from '../src/core/port';
 
 const execFileAsync = promisify(execFile);
@@ -77,7 +78,17 @@ function saveSettings(): void {
   }
 }
 
+/**
+ * The branch, or a sentinel saying why there isn't one.
+ *
+ * A remembered project can disappear between launches - a folder renamed, a
+ * USB drive unplugged, a network share not mounted yet after a reboot. That
+ * used to report `(not a git repo)`, the same thing said about a perfectly
+ * good folder that simply is not a repository, and the two need different
+ * answers: one is a choice, the other means the project is gone.
+ */
 async function currentBranch(repo: string): Promise<string> {
+  if (!projectReadable(repo)) return FOLDER_MISSING;
   try {
     const { stdout } = await execFileAsync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], {
       timeout: 10_000,
@@ -85,7 +96,7 @@ async function currentBranch(repo: string): Promise<string> {
     });
     return stdout.trim() || 'main';
   } catch {
-    return '(not a git repo)';
+    return NOT_A_REPO;
   }
 }
 
@@ -107,7 +118,11 @@ async function startServer(repo: string): Promise<void> {
     name: basename(repo),
     path: repo,
     branch,
-    isGitRepo: branch !== '(not a git repo)',
+    // Checked against every sentinel rather than against one of them. This was
+    // `branch !== '(not a git repo)'`, which would have called a folder that
+    // does not exist a git repository the moment a second sentinel existed -
+    // and `capability()` trusts this to decide whether writes are offered.
+    isGitRepo: isRepoBranch(branch),
   });
 
   server.onEvent((event: AgentEvent) => send('agent-event', event));
@@ -133,6 +148,17 @@ async function startServer(repo: string): Promise<void> {
     // phone being broken.
     portFallback: bound.wasPreferred ? null : boundPort,
   });
+
+  // A remembered project that has since vanished is worth saying out loud
+  // rather than leaving as a branch label nobody reads. The server keeps
+  // running: the phone can still reach this desktop and pick another project,
+  // which it could not do if startup refused.
+  if (!projectReadable(repo)) {
+    send(
+      'error',
+      `The project folder ${repo} is not there any more. Choose another with Change…`,
+    );
+  }
 }
 
 function refreshTray(): void {
