@@ -11,6 +11,7 @@ import {
   INJECTION_NOTICE,
   MAX_TURNS,
   redactSecrets,
+  briefError,
 } from './safety';
 import type {
   AgentAdapter,
@@ -61,9 +62,24 @@ const PHONE_CONTEXT_PROMPT = `Your reply is being read on a phone screen, inside
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly agentId = 'claude-code' as const;
 
+  /**
+   * Overridable so the missing-agent path can be exercised.
+   *
+   * This was hardcoded to 'claude', which meant the only way to see what Axune
+   * does when Claude Code is absent was to uninstall it. `GeminiAdapter` has
+   * had the equivalent since it was written, and says why: an adapter whose
+   * failure path cannot be reached is an adapter that ships broken.
+   *
+   * **Detection only.** Runs go through the Agent SDK rather than this binary,
+   * so pointing it elsewhere changes what `detect()` reports and nothing about
+   * how a run behaves. Worth stating, because a name like this implies more
+   * than it does.
+   */
+  constructor(private readonly binary = process.env['AXUNE_CLAUDE_BIN'] ?? 'claude') {}
+
   async detect(): Promise<DetectionResult> {
     try {
-      const { stdout } = await execFileAsync('claude', ['--version'], {
+      const { stdout } = await execFileAsync(this.binary, ['--version'], {
         timeout: 15_000,
         windowsHide: true,
       });
@@ -86,7 +102,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         // PATH" still has to go and find out what to install; the reason is
         // kept because it distinguishes a missing CLI from a broken one, but it
         // no longer arrives alone.
-        detail: `Claude Code is not installed. Install it with: npm install -g @anthropic-ai/claude-code (${describeError(error)})`,
+        detail: `Claude Code is not installed. Install it with: npm install -g @anthropic-ai/claude-code (${briefError(error)})`,
       };
     }
   }

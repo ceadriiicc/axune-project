@@ -212,6 +212,22 @@ export function checkCommand(command: unknown, mode: 'read' | 'write'): PolicyDe
 }
 
 /**
+ * A spawn failure, short enough to sit in a UI row.
+ *
+ * `detect()` puts its error into `AgentStatus.detail`, which the desktop window
+ * and the phone render directly. Windows' "is not recognized as an internal or
+ * external command" runs to four lines and buried the install instruction
+ * underneath it - so the actionable sentence was there and nobody would read
+ * that far. The cause is still worth keeping, because it distinguishes a
+ * missing CLI from a broken one; it just does not deserve a paragraph.
+ */
+export function briefError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const oneLine = raw.replace(/\s+/g, ' ').trim();
+  return oneLine.length > 70 ? `${oneLine.slice(0, 69)}…` : oneLine;
+}
+
+/**
  * Strip anything that looks like a credential before it reaches an event.
  *
  * Tool inputs and tool results are streamed to the phone, written to the

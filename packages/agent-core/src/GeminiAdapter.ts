@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AgentEvent } from '@axune/protocol';
 
 import type { AgentAdapter, DetectionResult, RunHandle, RunRequest, RunningRun } from './AgentAdapter';
-import { INJECTION_NOTICE, MAX_TURNS, redactSecrets } from './safety';
+import { briefError, INJECTION_NOTICE, MAX_TURNS, redactSecrets } from './safety';
 
 const execFileAsync = promisify(execFile);
 
@@ -72,7 +72,7 @@ export class GeminiAdapter implements AgentAdapter {
         installed: false,
         version: null,
         authenticated: 'no',
-        detail: `Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli (${describeError(error)})`,
+        detail: `Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli (${briefError(error)})`,
       };
     }
   }
