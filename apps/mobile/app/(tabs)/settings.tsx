@@ -6,6 +6,8 @@ import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, V
 import { type Palette, radius, spacing } from '@/constants/theme';
 import { applyCaptureGuard, loadCaptureGuard, saveCaptureGuard } from '@/lib/captureGuard';
 import { useTheme } from '@/lib/ThemeContext';
+import { approxCost, compact } from '@/lib/usageLine';
+import type { UsageDay } from '@axune/protocol';
 import { useWorkspace } from '@/lib/WorkspaceContext';
 
 /**
@@ -30,7 +32,7 @@ export default function SettingsScreen() {
     applyAppearance,
   } = useTheme();
   const styles = makeStyles(color);
-  const { machine, project, capability, connectionState, disconnect } = useWorkspace();
+  const { machine, project, capability, connectionState, disconnect, usageDay } = useWorkspace();
 
   // Read once rather than held in context: PrivacyShield applies it at launch
   // and this applies it on change, so the two never need to agree through
@@ -92,6 +94,10 @@ export default function SettingsScreen() {
             value={project?.branch ?? '—'}
             styles={styles}
           />
+        </Section>
+
+        <Section title="Usage today" styles={styles}>
+          <Usage day={usageDay} styles={styles} />
         </Section>
 
         <Section title="Access and safety" styles={styles}>
@@ -188,6 +194,123 @@ function Section({
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>
       <View style={styles.card}>{children}</View>
+    </View>
+  );
+}
+
+/**
+ * What this machine consumed today, and the one thing worth doing about it.
+ *
+ * ## What it will not say
+ *
+ * Nothing here is a share of a plan's limit, and there is no bar filling up.
+ * No provider reports what a plan allows or when it resets, so any percentage
+ * would be invented - and an invented number that people stop questioning is
+ * worse than no number at all. The same refusal is written into the ledger
+ * that produces these totals.
+ *
+ * ## Why the reused/fresh split leads
+ *
+ * It is the only part anyone can act on. Measured on this project, a
+ * conversation's first turn costs about $0.073 and its fourth about $0.022,
+ * because by then the repository the agent read is reused rather than sent
+ * again. Totals alone would say a day was expensive; this says which habit
+ * made it so.
+ */
+function Usage({
+  day,
+  styles,
+}: {
+  day: UsageDay | null;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const { palette: color } = useTheme();
+
+  if (!day || day.runs === 0) {
+    return (
+      <Text style={styles.sectionCopy}>
+        {day
+          ? 'No runs today. Totals are counted on your desktop, so they include runs this phone was not connected for.'
+          : 'Connect to your desktop to see what today has used.'}
+      </Text>
+    );
+  }
+
+  const reused = day.cacheReadTokens;
+  const fresh = day.inputTokens + day.cacheCreationTokens;
+  const tokens = reused + fresh + day.outputTokens;
+
+  return (
+    <View style={styles.usageBody}>
+      <View style={styles.usageHead}>
+        <Text style={styles.usageTotal}>{compact(tokens)}</Text>
+        <Text style={styles.usageTotalUnit}>
+          tokens over {day.runs} {day.runs === 1 ? 'run' : 'runs'}
+        </Text>
+      </View>
+
+      <Stat label="Reused from cache" value={compact(reused)} styles={styles} />
+      <Stat label="Sent fresh" value={compact(fresh)} styles={styles} />
+      {day.coldStarts > 0 ? (
+        <Stat
+          label="First run after a break"
+          value={`${day.coldStarts} ${day.coldStarts === 1 ? 'run' : 'runs'}`}
+          tint={color.claudeText}
+          styles={styles}
+        />
+      ) : null}
+      {/*
+        Shown rather than folded into the total. A run that reported nothing is
+        not a free run, and counting it as zero would make the figure read as
+        complete when it is not.
+      */}
+      {day.unreported > 0 ? (
+        <Stat
+          label="Reported nothing"
+          value={`${day.unreported} ${day.unreported === 1 ? 'run' : 'runs'}`}
+          styles={styles}
+        />
+      ) : null}
+      {/*
+        Named, not just counted. The ledger stores the first line of the prompt
+        for exactly this: a number tells you the day was expensive, and the
+        prompt tells you which question made it so - which is the only version
+        anyone can act on.
+      */}
+      {day.heaviest ? (
+        <View style={styles.usageHeaviest}>
+          <Stat label="Heaviest run" value={compact(day.heaviest.tokens)} styles={styles} />
+          <Text style={styles.usageHeaviestPrompt} numberOfLines={2}>
+            {day.heaviest.prompt}
+          </Text>
+        </View>
+      ) : null}
+
+      <Text style={styles.usageNote}>
+        {approxCost(day.costUsd) ?? ''}
+        {day.costUsd > 0 ? ' · ' : ''}
+        Continuing a conversation costs about a third of starting one, because the agent still
+        remembers what it read.
+      </Text>
+    </View>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tint,
+  styles,
+}: {
+  label: string;
+  value: string;
+  tint?: string;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <View style={styles.usageStat}>
+      <Text style={[styles.usageStatLabel, tint ? { color: tint } : null]}>{label}</Text>
+      <Text style={[styles.usageStatValue, tint ? { color: tint } : null]}>{value}</Text>
     </View>
   );
 }
@@ -373,6 +496,16 @@ const makeStyles = (color: Palette) =>
       alignItems: 'flex-start',
     },
     explanationText: { color: color.textMuted, fontSize: 13, lineHeight: 19, flex: 1 },
+    usageBody: { gap: 10, padding: spacing.md },
+    usageHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+    usageTotal: { color: color.text, fontSize: 26, fontWeight: '600', fontVariant: ['tabular-nums'] },
+    usageTotalUnit: { color: color.textSoft, fontSize: 12.5 },
+    usageStat: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    usageStatLabel: { color: color.textMuted, fontSize: 12.5 },
+    usageStatValue: { color: color.text, fontSize: 12.5, fontVariant: ['tabular-nums'] },
+    usageHeaviest: { gap: 2 },
+    usageHeaviestPrompt: { color: color.textSoft, fontSize: 11.5, fontStyle: 'italic' },
+    usageNote: { color: color.textSoft, fontSize: 11.5, lineHeight: 17 },
     sectionCopy: { color: color.textMuted, fontSize: 13, padding: spacing.md, paddingBottom: 0 },
     privacy: { color: color.textMuted, fontSize: 13, lineHeight: 20, padding: spacing.md },
 

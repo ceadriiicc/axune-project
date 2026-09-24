@@ -394,6 +394,10 @@ export class AxuneServer {
         machine: this.machine(),
         capability: this.capability(),
       });
+      // Includes runs this device never saw - the desktop records every run
+      // whether a phone was watching or not, which is the whole reason the
+      // ledger lives here rather than being summed on the phone.
+      this.send(socket, { type: 'usage_day', day: this.usage.day() });
       return;
     }
 
@@ -536,6 +540,10 @@ export class AxuneServer {
         // was free.
         if (event.type === 'run_finished') {
           this.usage.record(message.runId, agentId, message.prompt, event.usage ?? null);
+          // Pushed rather than polled, and after recording rather than before,
+          // so the total a phone shows always includes the run it just watched
+          // finish. A phone that was away gets the same figure on reconnect.
+          this.broadcast({ type: 'usage_day', day: this.usage.day() });
         }
 
         // A refusal is worth keeping. It used to be broadcast to the phone and

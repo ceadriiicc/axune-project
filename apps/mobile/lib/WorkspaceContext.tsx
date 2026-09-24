@@ -9,6 +9,7 @@ import type {
   MachineSummary,
   PairingPayload,
   ProjectSummary,
+  UsageDay,
 } from '@axune/protocol';
 import React, {
   createContext,
@@ -68,6 +69,15 @@ interface WorkspaceState {
   agents: AgentStatus[];
   machine: MachineSummary | null;
   capability: Capability;
+  /**
+   * Today's totals as counted by the desktop, or null before the first push.
+   *
+   * Never summed here. This phone sees only the runs it was connected for, and
+   * its own stored history is capped by size - a total from either would look
+   * precise and under-report. The desktop sees every run and bounds its ledger
+   * by age instead.
+   */
+  usageDay: UsageDay | null;
   lastSeenAt: number | null;
 
   /**
@@ -132,6 +142,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [machine, setMachine] = useState<MachineSummary | null>(null);
   const [capability, setCapability] = useState<Capability>('read-only');
+  const [usageDay, setUsageDay] = useState<UsageDay | null>(null);
   const [lastSeenAt, setLastSeenAt] = useState<number | null>(null);
 
   const [conversation, setConversation] = useState<LiveRun[]>([]);
@@ -278,6 +289,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setLastSeenAt(Date.now());
       },
       onAgents: setAgents,
+      onUsageDay: setUsageDay,
       onActivity: (events, sinceLastVisit) => {
         // A snapshot is authoritative: it replaces the list, so it also
         // replaces what counts as already seen.
@@ -507,6 +519,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       agents,
       machine,
       capability,
+      usageDay,
       lastSeenAt,
       conversation,
       threads,
@@ -532,6 +545,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       agents,
       machine,
       capability,
+      usageDay,
       lastSeenAt,
       conversation,
       threads,

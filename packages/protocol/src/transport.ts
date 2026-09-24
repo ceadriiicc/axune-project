@@ -9,6 +9,42 @@ import type { AgentEvent, AgentId, RunMode } from './events';
 export const PROTOCOL_VERSION = 1;
 
 /** Everything the desktop knows about a project the phone might drive. */
+/**
+ * One day's consumption, totalled on the desktop.
+ *
+ * Lives in the protocol rather than on either side because both render it and a
+ * drift between them would be invisible: a phone that summed the same runs
+ * slightly differently would simply show a different number, with nothing to
+ * say which was right.
+ *
+ * The desktop is the only place this can be totalled honestly. It sees every
+ * run whether a phone was watching or not, and its ledger is bounded by age
+ * rather than by count - a total computed from a trimmed list is not a total.
+ *
+ * Deliberately carries no share of a plan's limit. Nothing the provider reports
+ * says what a plan allows or when it resets, so a percentage would be invented,
+ * and a made-up number that people stop questioning is worse than no number.
+ */
+export interface UsageDay {
+  /** Local YYYY-MM-DD. Local because "today" is a human question, not a UTC one. */
+  date: string;
+  runs: number;
+  /** Runs that finished without the provider reporting anything - never counted as free. */
+  unreported: number;
+  /**
+   * Runs that re-sent what an earlier run had cached, after a gap long enough
+   * to explain it. See `isIdleStart` - the claim needs both signals.
+   */
+  coldStarts: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  /** At published API rates. A subscription is not billed per run. */
+  costUsd: number;
+  heaviest: { prompt: string; tokens: number } | null;
+}
+
 export interface ProjectSummary {
   name: string;
   path: string;
@@ -158,6 +194,12 @@ export type ServerMessage =
   | { type: 'changes'; runId: string; result: ChangeSet }
   /** Branches agents have produced and the user chose to keep. */
   | { type: 'branches'; branches: AgentBranch[] }
+  /**
+   * Today's totals, pushed rather than polled: sent once on pairing and again
+   * whenever a run finishes, so the figure a phone shows is never older than
+   * the last run it knows about.
+   */
+  | { type: 'usage_day'; day: UsageDay }
   | { type: 'pong' };
 
 /**

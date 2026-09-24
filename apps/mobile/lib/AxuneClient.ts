@@ -14,6 +14,7 @@ import type {
   ClientHello,
   SealedFrame,
   ServerHello,
+  UsageDay,
 } from '@axune/protocol';
 import { PROTOCOL_VERSION } from '@axune/protocol';
 import {
@@ -41,6 +42,8 @@ export interface ClientCallbacks {
   onGap?: (runId: string, missedEvents: number) => void;
   onProject?: (project: ProjectSummary) => void;
   onAgents?: (agents: AgentStatus[]) => void;
+  /** Today's totals, as counted by the desktop - which sees runs this phone did not. */
+  onUsageDay?: (day: UsageDay) => void;
   onMachine?: (machine: MachineSummary, capability: Capability) => void;
   onActivity?: (events: ActivityEvent[], sinceLastVisit: number) => void;
   onActivityEvent?: (event: ActivityEvent) => void;
@@ -447,6 +450,9 @@ export class AxuneClient {
         this.callbacks.onMachine?.(message.machine, message.capability);
         return;
 
+      case 'usage_day':
+        this.callbacks.onUsageDay?.(message.day);
+        return;
       case 'agents_changed':
         this.callbacks.onAgents?.(message.agents);
         return;

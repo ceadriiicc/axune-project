@@ -2,7 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import type { AgentId, RunUsage } from '@axune/protocol';
+import { isIdleStart } from '@axune/protocol';
+import type { AgentId, RunUsage, UsageDay } from '@axune/protocol';
 
 /**
  * What every run consumed.
@@ -49,19 +50,8 @@ export interface UsageEntry {
   usage: RunUsage | null;
 }
 
-export interface UsageDay {
-  /** Local date, YYYY-MM-DD. Local because "today" is a human question. */
-  date: string;
-  runs: number;
-  /** Runs that finished without the provider reporting anything. */
-  unreported: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  costUsd: number;
-  heaviest: { prompt: string; tokens: number } | null;
-}
+
+export type { UsageDay };
 
 export class UsageLedger {
   private entries: UsageEntry[] = [];
@@ -113,6 +103,7 @@ export class UsageLedger {
       date,
       runs: 0,
       unreported: 0,
+      coldStarts: 0,
       inputTokens: 0,
       outputTokens: 0,
       cacheCreationTokens: 0,
@@ -121,7 +112,7 @@ export class UsageLedger {
       heaviest: null,
     };
 
-    for (const entry of this.entries) {
+    for (const [index, entry] of this.entries.entries()) {
       if (localDate(new Date(entry.finishedAt)) !== date) continue;
       totals.runs += 1;
       if (!entry.usage) {
@@ -129,6 +120,16 @@ export class UsageLedger {
         continue;
       }
       const u = entry.usage;
+
+      // Measured against the previous run on this machine rather than the
+      // previous run of its conversation. The cached prefix is mostly the
+      // agent's own system prompt and this project's files, which any run
+      // keeps warm - so a run minutes after one in a different conversation
+      // was not starting cold, whatever its own thread suggests.
+      const previous = this.entries[index - 1];
+      if (isIdleStart(u, previous ? entry.finishedAt - previous.finishedAt : null)) {
+        totals.coldStarts += 1;
+      }
       totals.inputTokens += u.inputTokens;
       totals.outputTokens += u.outputTokens;
       totals.cacheCreationTokens += u.cacheCreationTokens;

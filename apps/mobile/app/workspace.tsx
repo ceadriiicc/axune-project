@@ -15,11 +15,12 @@ import {
 
 import { AgentText } from '@/components/ui/AgentText';
 import { ChangeReview } from '@/components/ui/ChangeReview';
+import { ThreadSheet } from '@/components/ui/ThreadSheet';
 import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { lookFor } from '@/constants/agents';
 import { radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
-import { totalTokens, type RunUsage } from '@axune/protocol';
+import { describeUsage } from '@/lib/usageLine';
 import { useWorkspace, type LiveRun } from '@/lib/WorkspaceContext';
 
 /**
@@ -58,6 +59,7 @@ export default function WorkspaceScreen() {
   } = useWorkspace();
 
   const [draft, setDraft] = useState('');
+  const [sheetOpen, setSheetOpen] = useState(false);
   /**
    * Editing is opt-in per prompt rather than a mode you can forget you are in.
    * Asking a question and accidentally authorising file changes should not be
@@ -107,14 +109,36 @@ export default function WorkspaceScreen() {
               {connected ? (project?.branch ?? '') : 'Not connected'}
             </Text>
           </View>
-          {/* Labelled, because an unlabelled icon that changes what you are
-              reading is a trap. It archives rather than deletes. */}
-          {conversation.length > 0 ? (
-            <Pressable style={styles.headerButton} onPress={newConversation} hitSlop={8}>
-              <Ionicons name="add" size={15} color={color.textMuted} />
-              <Text style={styles.headerButtonText}>New</Text>
-            </Pressable>
-          ) : null}
+          {/*
+            Two controls, not one. Browsing earlier conversations used to be
+            possible only by tapping "New", which archives what you are reading
+            and starts an uncached conversation - so looking at an old thread
+            cost about three times what continuing costs. Threads now has its
+            own door; New is unchanged, because starting fresh was never the
+            problem.
+
+            Labelled rather than icon-only: an unlabelled icon that changes what
+            you are reading is a trap.
+          */}
+          <View style={styles.headerActions}>
+            {threads.length > 0 ? (
+              <Pressable
+                style={styles.headerButton}
+                onPress={() => setSheetOpen(true)}
+                hitSlop={8}
+              >
+                <Ionicons name="chatbubbles-outline" size={14} color={color.textMuted} />
+                <Text style={styles.headerButtonText}>Threads</Text>
+                <Text style={styles.headerButtonCount}>{threads.length}</Text>
+              </Pressable>
+            ) : null}
+            {conversation.length > 0 ? (
+              <Pressable style={styles.headerButton} onPress={newConversation} hitSlop={8}>
+                <Ionicons name="add" size={15} color={color.textMuted} />
+                <Text style={styles.headerButtonText}>New</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         <ScrollView
@@ -174,10 +198,11 @@ export default function WorkspaceScreen() {
               )}
             </View>
           ) : (
-            conversation.map((run) => (
+            conversation.map((run, index) => (
               <Turn
                 key={run.runId}
                 run={run}
+                sincePrevious={gapBefore(conversation, index)}
                 onStop={stopRun}
                 onDecide={(decision) => resolveChanges(run.runId, decision)}
               />
@@ -224,6 +249,21 @@ export default function WorkspaceScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <ThreadSheet
+        visible={sheetOpen}
+        threads={threads}
+        conversation={conversation}
+        onOpen={(id) => {
+          openThread(id);
+          setSheetOpen(false);
+        }}
+        onNew={() => {
+          newConversation();
+          setSheetOpen(false);
+        }}
+        onClose={() => setSheetOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -236,10 +276,18 @@ export default function WorkspaceScreen() {
  */
 function Turn({
   run,
+  sincePrevious,
   onStop,
   onDecide,
 }: {
   run: LiveRun;
+  /**
+   * Milliseconds since the previous turn of this conversation, or null for the
+   * first. Only ever used to explain low cache reuse, never on its own - a run
+   * kept warm by a different thread reuses plenty, so the reuse signal already
+   * rules out the case this gap would get wrong.
+   */
+  sincePrevious: number | null;
   onStop: () => void;
   onDecide: (decision: 'keep' | 'discard') => void;
 }) {
@@ -260,7 +308,7 @@ function Turn({
       </View>
 
       <View style={styles.panels}>
-        <AgentPanel run={run} onStop={onStop} />
+        <AgentPanel run={run} sincePrevious={sincePrevious} onStop={onStop} />
       </View>
 
       {run.changes ? (
@@ -270,7 +318,15 @@ function Turn({
   );
 }
 
-function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
+function AgentPanel({
+  run,
+  sincePrevious,
+  onStop,
+}: {
+  run: LiveRun;
+  sincePrevious: number | null;
+  onStop: () => void;
+}) {
   const { palette: color } = useTheme();
   const styles = useStyles();
   const agent = lookFor(run.agentId);
@@ -296,7 +352,7 @@ function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
         spent a chunk of the day's allowance - and no way to explain a limit
         when it arrived. Absent rather than zero when unreported.
       */}
-      {run.usage ? <Text style={styles.usage}>{describeUsage(run.usage)}</Text> : null}
+      {run.usage ? <Usage run={run} sincePrevious={sincePrevious} /> : null}
 
       {working && lastTool ? (
         <Text style={styles.doing} numberOfLines={1}>
@@ -385,6 +441,8 @@ function useStyles() {
       borderColor: color.line,
     },
     headerButtonText: { color: color.textMuted, fontSize: 12, fontWeight: '600' },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    headerButtonCount: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
     previous: { marginTop: spacing.lg, gap: 4 },
     previousLabel: {
       color: color.textSoft,
@@ -499,7 +557,10 @@ function useStyles() {
     // person can act on ("not a git repository", "read-only run"), so it earns
     // body-text size instead of fine print.
     failure: { color: color.danger, fontSize: 13, lineHeight: 18 },
+    usageBlock: { gap: 3 },
     usage: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
+    usageIdleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    usageIdle: { color: color.claudeText, fontSize: 11, flex: 1 },
     refusals: { gap: 4 },
     refusalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
     refusalText: { color: color.textMuted, fontSize: 12, lineHeight: 16, flex: 1 },
@@ -556,22 +617,46 @@ function useStyles() {
  * run happens on a subscription already paid for - and showing a dollar figure
  * without saying so would be a lie about how the product works.
  */
-function describeUsage(usage: RunUsage): string {
-  const tokens = totalTokens(usage);
-  const shown =
-    tokens >= 1_000_000
-      ? `${(tokens / 1_000_000).toFixed(1)}M`
-      : tokens >= 1_000
-        ? `${Math.round(tokens / 1_000)}k`
-        : String(tokens);
+/**
+ * How long the conversation sat idle before this turn, or null when that is not
+ * knowable - the first turn, or a run restored from disk without timings. Null
+ * is not treated as "no gap": an unknown gap must not silently suppress an
+ * explanation, and the reuse signal is what stops it being claimed wrongly.
+ */
+function gapBefore(conversation: LiveRun[], index: number): number | null {
+  if (index === 0) return null;
+  const previous = conversation[index - 1];
+  const startedAt = conversation[index]?.startedAt;
+  if (!previous?.lastEventAt || !startedAt) return null;
+  return startedAt - previous.lastEventAt;
+}
 
-  const parts = [`${shown} tokens`];
-  // Cache reads are the cheap half and the reason a follow-up costs far less
-  // than the first question. Worth naming when it dominates, because otherwise
-  // the totals look alarming for no reason.
-  if (usage.cacheReadTokens > usage.cacheCreationTokens && usage.cacheReadTokens > 0) {
-    parts.push('mostly cached');
-  }
-  if (usage.costUsd !== null) parts.push(`≈$${usage.costUsd.toFixed(2)} of API equivalent`);
-  return parts.join(' · ');
+/**
+ * What this turn consumed, and - only when it can be said honestly - why.
+ *
+ * The counts alone answer "was that expensive". The second line answers the
+ * question that follows, which is the one worth acting on: a turn that reused
+ * nothing after a long gap cost several times what the same question costs
+ * inside a live conversation. Withheld whenever either signal is missing,
+ * because a confident wrong explanation is worse than none.
+ */
+function Usage({ run, sincePrevious }: { run: LiveRun; sincePrevious: number | null }) {
+  const { palette: color } = useTheme();
+  const styles = useStyles();
+  if (!run.usage) return null;
+  const line = describeUsage(run.usage, sincePrevious);
+
+  return (
+    <View style={styles.usageBlock}>
+      <Text style={styles.usage}>{line.text}</Text>
+      {line.idle ? (
+        <View style={styles.usageIdleRow}>
+          <Ionicons name="snow-outline" size={11} color={color.claudeText} />
+          <Text style={styles.usageIdle}>
+            First run in a while — continuing a conversation re-sends far less
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }

@@ -153,6 +153,31 @@ check('a damaged file costs the history, not the launch', () => {
   return 'unreadable file became an empty ledger, and recording still works';
 });
 
+check('a cold start is counted, and a busy run is not mistaken for one', () => {
+  // The distinction that makes the figure worth showing. Both runs below reuse
+  // far less than they send; only one of them was actually starting cold, and
+  // calling the other one cold would teach someone to ignore the number.
+  const file = join(scratch, 'cold.json');
+  const ledger = new UsageLedger(file);
+  ledger.record('warm', 'claude-code', 'a settled follow-up', usage({ cacheReadTokens: 43_000, cacheCreationTokens: 40 }));
+  ledger.record('busy', 'claude-code', 'summarise every file in lib', usage({ cacheReadTokens: 0, cacheCreationTokens: 47_000 }));
+  ledger.record('cold', 'claude-code', 'first question after lunch', usage({ cacheReadTokens: 0, cacheCreationTokens: 47_000 }));
+
+  // 'busy' lands seconds after 'warm'; 'cold' lands two hours later.
+  const rows = JSON.parse(readFileSync(file, 'utf8')) as { finishedAt: number }[];
+  const now = Date.now();
+  rows[0]!.finishedAt = now - 2 * 60 * 60 * 1000 - 30_000;
+  rows[1]!.finishedAt = now - 2 * 60 * 60 * 1000;
+  rows[2]!.finishedAt = now;
+  writeFileSync(file, JSON.stringify(rows));
+
+  const day = new UsageLedger(file).day();
+  if (day.coldStarts !== 1) {
+    return `FAIL: counted ${day.coldStarts} cold starts, expected 1 - the busy run reused nothing but the cache was warm`;
+  }
+  return '1 of 2 low-reuse runs counted, because only one followed a long gap';
+});
+
 check('forgetting everything leaves nothing behind', () => {
   const file = join(scratch, 'wipe.json');
   const ledger = new UsageLedger(file);

@@ -8,7 +8,7 @@
   "scripts": {
     "mobile": "npm --prefix apps/mobile run start",
     "mobile:web": "npm --prefix apps/mobile run web",
-    "typecheck": "npm --prefix apps/mobile run typecheck && tsc -p packages/shared && tsc -p packages/protocol"
+    "typecheck": "npm --prefix packages/protocol run typecheck && npm --prefix packages/shared run typecheck && npm --prefix packages/secure-channel run typecheck && npm --prefix packages/git-core run typecheck && npm --prefix packages/agent-core run typecheck && npm --prefix packages/relay run typecheck && npm --prefix apps/desktop run typecheck && npm --prefix apps/mobile run typecheck"
   },
   "devDependencies": {
     "typescript": "~5.3.3"

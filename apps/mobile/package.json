@@ -15,7 +15,8 @@
     "try:palette": "tsx scripts/tryPalette.ts",
     "try:home": "tsx scripts/tryHome.ts",
     "try:privacy": "tsx scripts/tryPrivacy.ts",
-    "try:stress": "tsx scripts/tryStress.ts"
+    "try:stress": "tsx scripts/tryStress.ts",
+    "try:usage-line": "tsx scripts/tryUsageLine.ts"
   },
   "dependencies": {
     "@axune/protocol": "file:../../packages/protocol",

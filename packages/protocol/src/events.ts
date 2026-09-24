@@ -89,3 +89,45 @@ export function totalTokens(usage: RunUsage): number {
     usage.inputTokens + usage.outputTokens + usage.cacheCreationTokens + usage.cacheReadTokens
   );
 }
+
+/**
+ * The provider's longest cache lives about an hour. A shorter gap cannot have
+ * expired it, so a shorter gap can never explain low reuse.
+ */
+export const IDLE_GAP_MS = 55 * 60 * 1000;
+
+/** Below this a turn is too small for its cache split to mean anything. */
+const ENOUGH_TO_JUDGE = 20_000;
+
+/** Reuse under a quarter of a turn is low enough to want explaining. */
+const LOW_REUSE = 0.25;
+
+/**
+ * Whether a run paid to re-send what an earlier run had already cached, and a
+ * long enough gap explains why.
+ *
+ * ## Why both signals, and why this lives here
+ *
+ * Low reuse on its own does not mean the cache went cold. A run that reads
+ * twenty files legitimately sends a great deal of new material - measured on
+ * this repository, one such run sent 47k fresh tokens seconds after the
+ * previous turn, with the cache perfectly warm. Calling that a cold start
+ * would be wrong in the direction that teaches someone to distrust every
+ * number beside it, so the claim also requires a gap long enough for the
+ * provider's cache to have expired.
+ *
+ * It sits in the protocol because the desktop counts these for a day's total
+ * and the phone marks them on a single turn. Two copies of a heuristic drift
+ * silently: both would keep rendering, and nothing would say which was right.
+ *
+ * `msSincePrevious` is null when there is no earlier run to compare against,
+ * which is treated as a long gap - it usually is one, and the reuse signal is
+ * what stops that assumption being claimed wrongly.
+ */
+export function isIdleStart(usage: RunUsage, msSincePrevious: number | null): boolean {
+  const reused = usage.cacheReadTokens;
+  const fresh = usage.inputTokens + usage.cacheCreationTokens;
+  if (reused + fresh + usage.outputTokens < ENOUGH_TO_JUDGE) return false;
+  if (reused >= (reused + fresh) * LOW_REUSE) return false;
+  return msSincePrevious === null || msSincePrevious >= IDLE_GAP_MS;
+}
