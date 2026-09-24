@@ -34,6 +34,7 @@ import { readGitSnapshot } from './gitSnapshot';
 import { PairingManager } from './PairingManager';
 import { RunRegistry } from './RunRegistry';
 import { SessionStore } from './SessionStore';
+import { UsageLedger } from './UsageLedger';
 
 /**
  * The desktop half of Axune: accepts one paired phone, runs agents against the
@@ -82,6 +83,8 @@ export class AxuneServer {
    * initialisers, so building it eagerly reads an undefined project.
    */
   private egressLedger: EgressLedger | null = null;
+  /** What every run consumed. Kept by the desktop because it sees every run. */
+  readonly usage = new UsageLedger();
 
   private get egress(): EgressLedger {
     this.egressLedger ??= new EgressLedger(this.project.path);
@@ -524,6 +527,16 @@ export class AxuneServer {
       (event: AgentEvent) => {
         this.registry.record(event);
         this.egress.observe(message.runId, agentId, event);
+
+        // Recorded from the event stream rather than from `run.done`, because
+        // the usage figure rides on run_finished and the handle does not carry
+        // it. Every run reaches here, including the ones that fail - which is
+        // the point: a run that reported nothing is recorded as unreported, not
+        // omitted, so a day's total can say so instead of quietly implying it
+        // was free.
+        if (event.type === 'run_finished') {
+          this.usage.record(message.runId, agentId, message.prompt, event.usage ?? null);
+        }
 
         // A refusal is worth keeping. It used to be broadcast to the phone and
         // then forgotten, so there was no record of what the policy layer

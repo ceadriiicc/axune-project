@@ -16,7 +16,8 @@
     "try:privacy": "tsx src/tryPrivacy.ts",
     "try:gemini": "tsx src/tryGemini.ts",
     "try:lifecycle": "tsx src/tryLifecycle.ts",
-    "try:relay": "tsx src/tryRelayLink.ts"
+    "try:relay": "tsx src/tryRelayLink.ts",
+    "try:usage": "tsx src/tryUsage.ts"
   },
   "dependencies": {
     "@axune/agent-core": "file:../../packages/agent-core",
