@@ -15,3 +15,4 @@ apps/desktop/renderer/renderer.js
 
 # Output from the brag skill - generated, not source
 brag-output/
+packages/relay/node_modules/

@@ -1,0 +1,23 @@
+{
+  "name": "@axune/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "try": "tsx src/tryRelay.ts",
+    "serve": "tsx src/serve.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@axune/secure-channel": "file:../secure-channel",
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "~5.3.3"
+  }
+}
