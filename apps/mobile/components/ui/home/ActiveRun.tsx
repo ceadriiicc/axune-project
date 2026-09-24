@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AGENTS } from '@/constants/agents';
+import { lookFor } from '@/constants/agents';
 import { radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
 import type { LiveRun } from '@/lib/WorkspaceContext';
@@ -29,7 +29,7 @@ export function ActiveRun({
 }) {
   const { palette: color } = useTheme();
   const styles = useStyles();
-  const agent = AGENTS.claude;
+  const agent = lookFor(run.agentId);
   const elapsed = useTicker(run.startedAt);
   const quietFor = run.lastEventAt ? Date.now() - run.lastEventAt : 0;
   const lastTool = [...run.activity].reverse().find((line) => line.ok === null);

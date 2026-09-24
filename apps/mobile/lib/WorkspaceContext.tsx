@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   AgentBranch,
   AgentEvent,
+  AgentId,
   AgentStatus,
   ChangeSet,
   Capability,
@@ -43,6 +44,16 @@ export interface LiveRun {
   /** Streamed assistant text, accumulated from message_delta. */
   text: string;
   activity: ActivityLine[];
+  /**
+   * Which agent produced this run.
+   *
+   * Every `AgentEvent` has carried this since the protocol was written and the
+   * phone threw it away on arrival, so four separate places hardcoded
+   * `AGENTS.claude` and rendered every run as Claude Code in Claude's colours.
+   * Invisible while there is one agent, and the first thing that breaks when
+   * there are two.
+   */
+  agentId: AgentId;
   status: 'working' | 'finished' | 'stopped' | 'failed';
   outcome: string | null;
   /**
@@ -148,12 +159,16 @@ const WorkspaceContext = createContext<WorkspaceState | null>(null);
 /** Shown on the desktop as the name of the trusted device. */
 const DEVICE_NAME = 'iPhone';
 
-const emptyRun = (runId: string, prompt: string): LiveRun => ({
+const emptyRun = (runId: string, prompt: string, agentId: AgentId = 'claude-code'): LiveRun => ({
   runId,
   prompt,
   text: '',
   activity: [],
   error: null,
+  // Defaulted only for the moment between asking and the first event arriving.
+  // Every event that follows carries the real id and overwrites it, so this is
+  // a placeholder rather than an assumption about which agent ran.
+  agentId,
   status: 'working',
   outcome: null,
   startedAt: Date.now(),
@@ -189,6 +204,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    */
   const conversationIdRef = useRef<string>(randomId());
   /**
+   * The agent list, readable from a callback that must not re-create itself.
+   * `sendPrompt` has an empty dependency array on purpose - it is handed to
+   * every screen - so it cannot close over `agents` directly without going
+   * stale the first time the desktop reports a change.
+   */
+  const agentsRef = useRef<AgentStatus[]>([]);
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+  /**
    * Nothing is written to disk until what is on disk has been read.
    * Without this the first render's empty state races the load and erases
    * every stored conversation on launch.
@@ -200,8 +225,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const applyEvent = useCallback((event: AgentEvent) => {
     setConversation((current) => {
       const index = current.findIndex((entry) => entry.runId === event.runId);
-      const previous = index >= 0 ? current[index]! : emptyRun(event.runId, '');
-      const updated = reduceRun({ ...previous, lastEventAt: Date.now() }, event);
+      const previous = index >= 0 ? current[index]! : emptyRun(event.runId, '', event.agentId);
+      // agentId comes from the event rather than from whatever the run was
+      // created with: the desktop is the authority on which agent answered,
+      // and a run started optimistically here should be corrected by it.
+      const updated = reduceRun(
+        { ...previous, lastEventAt: Date.now(), agentId: event.agentId },
+        event,
+      );
 
       if (updated.status !== 'working' && previous.status === 'working') {
         setHistory((past) => [summarise(updated), ...past.filter((e) => e.runId !== updated.runId)]);
@@ -397,11 +428,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const client = clientRef.current;
     if (!client?.isConnected) return;
 
+    // Whichever agent the desktop reports installed, rather than an assumption
+    // that it is Claude. A machine with only Codex on it could not be asked
+    // anything at all before this: the id was hardcoded two layers down.
+    const agentId = agentsRef.current.find((agent) => agent.installed)?.agentId ?? 'claude-code';
+
     const runId = randomId();
     // Show the prompt immediately rather than waiting for run_started to come
     // back over the wire — a phone should never look like it dropped a tap.
-    setConversation((current) => [...current, { ...emptyRun(runId, prompt), write }]);
-    client.startRun(runId, conversationIdRef.current, prompt, write);
+    setConversation((current) => [...current, { ...emptyRun(runId, prompt, agentId), write }]);
+    client.startRun(runId, conversationIdRef.current, prompt, write, agentId);
   }, []);
 
   /**

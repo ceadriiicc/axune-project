@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AGENTS } from '@/constants/agents';
+import { lookFor } from '@/constants/agents';
 import { type Palette, radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
@@ -113,7 +113,7 @@ function AgentCard({
   styles: ReturnType<typeof makeStyles>;
 }) {
   const { palette: color } = useTheme();
-  const brand = agentId === 'claude-code' ? AGENTS.claude : AGENTS.codex;
+  const brand = lookFor(agentId);
 
   return (
     <View style={styles.card}>

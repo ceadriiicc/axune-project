@@ -8,7 +8,7 @@ import { SinceLastChecked } from '@/components/ui/home/Activity';
 import { Alerts, collectAlerts } from '@/components/ui/home/Alerts';
 import { LastRun } from '@/components/ui/home/LastRun';
 import { ago, RepoStatus } from '@/components/ui/home/RepoStatus';
-import { AGENTS } from '@/constants/agents';
+import { lookFor } from '@/constants/agents';
 import { type Palette, radius, spacing } from '@/constants/theme';
 import {
   availableWidgets,
@@ -199,7 +199,18 @@ export default function HomeScreen() {
               ) : (
                 <Pressable style={styles.action} onPress={() => router.push('/workspace')}>
                   <View style={styles.flex}>
-                    <Text style={styles.actionEyebrow}>{AGENTS.claude.name}</Text>
+                    {/*
+                      The agent you would actually be asking, from what the
+                      desktop reports installed - not a hardcoded name. With
+                      nothing installed this says nothing rather than naming an
+                      agent that is not there.
+                    */}
+                    <Text style={styles.actionEyebrow}>
+                      {(() => {
+                        const ready = agents.find((agent) => agent.installed);
+                        return ready ? lookFor(ready.agentId).name : 'No agent installed';
+                      })()}
+                    </Text>
                     <Text style={styles.actionTitle}>
                       {connected ? 'Ask about this project' : 'Reconnect to continue'}
                     </Text>

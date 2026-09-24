@@ -16,7 +16,7 @@ import {
 import { AgentText } from '@/components/ui/AgentText';
 import { ChangeReview } from '@/components/ui/ChangeReview';
 import { formatDuration } from '@/components/ui/home/ActiveRun';
-import { AGENTS } from '@/constants/agents';
+import { lookFor } from '@/constants/agents';
 import { radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
 import { useWorkspace, type LiveRun } from '@/lib/WorkspaceContext';
@@ -272,7 +272,7 @@ function Turn({
 function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
   const { palette: color } = useTheme();
   const styles = useStyles();
-  const agent = AGENTS.claude;
+  const agent = lookFor(run.agentId);
   const working = run.status === 'working';
   const lastTool = [...run.activity].reverse().find((line) => line.ok === null);
 

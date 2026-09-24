@@ -30,6 +30,7 @@ const run = (over: Partial<LiveRun> = {}): LiveRun => ({
   prompt: 'what does this project do?',
   text: 'It is a phone-first remote control for coding agents.',
   activity: [],
+  agentId: 'claude-code',
   error: null,
   status: 'finished',
   outcome: 'completed',

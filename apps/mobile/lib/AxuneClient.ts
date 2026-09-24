@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   AgentBranch,
   AgentEvent,
+  AgentId,
   ChangeSet,
   AgentStatus,
   Capability,
@@ -178,7 +179,22 @@ export class AxuneClient {
     });
   }
 
-  startRun(runId: string, sessionId: string, prompt: string, write = false): void {
+  /**
+   * Ask an agent something.
+   *
+   * `agentId` used to be hardcoded to `'claude-code'` here, which meant a
+   * machine with only Codex installed could not be asked anything at all - the
+   * desktop would answer that the agent was not available, and the phone had no
+   * way to name a different one. It is a parameter now; the caller decides,
+   * because the caller is the only part that knows what is installed.
+   */
+  startRun(
+    runId: string,
+    sessionId: string,
+    prompt: string,
+    write = false,
+    agentId: AgentId = 'claude-code',
+  ): void {
     this.activeRunId = runId;
     this.lastSeq.set(runId, -1);
     this.send({
@@ -186,7 +202,7 @@ export class AxuneClient {
       runId,
       sessionId,
       prompt,
-      agentIds: ['claude-code'],
+      agentIds: [agentId],
       mode: 'independent',
       write,
     });
