@@ -38,6 +38,7 @@ const run = (over: Partial<LiveRun> = {}): LiveRun => ({
   lastEventAt: 1_700_000_001_000,
   write: false,
   changes: null,
+  usage: null,
   decision: null,
   ...over,
 });

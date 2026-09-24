@@ -54,6 +54,7 @@ const base = (): LiveRun => ({
   lastEventAt: 1_700_000_000_000,
   write: false,
   changes: null,
+  usage: null,
   decision: null,
 });
 

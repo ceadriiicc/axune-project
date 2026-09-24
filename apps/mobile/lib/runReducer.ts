@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentId, ChangeSet } from '@axune/protocol';
+import type { AgentEvent, AgentId, ChangeSet, RunUsage } from '@axune/protocol';
 
 /**
  * What a run looks like on the phone, and how an event changes it.
@@ -44,6 +44,13 @@ export interface LiveRun {
   write: boolean;
   /** What it produced, once finished. Null while running or for read runs. */
   changes: ChangeSet | null;
+  /**
+   * What this run consumed, when the provider said.
+   *
+   * Null rather than zero when absent: a run whose usage was not reported must
+   * read as unknown, not as free.
+   */
+  usage: RunUsage | null;
   /** Set once the user has kept or discarded the branch. */
   decision: 'keep' | 'discard' | null;
 }
@@ -150,6 +157,9 @@ export function reduceRun(run: LiveRun, event: AgentEvent, at: number = Date.now
               ? 'stopped'
               : 'failed',
         outcome: event.outcome,
+        // Kept if the provider reported nothing this time, so a resumed run
+        // does not lose the figure it already had.
+        usage: event.usage ?? run.usage,
       };
     case 'error':
       // A recoverable error is a note, not an ending - the run carries on, and

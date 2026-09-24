@@ -19,6 +19,7 @@ import { formatDuration } from '@/components/ui/home/ActiveRun';
 import { lookFor } from '@/constants/agents';
 import { radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
+import { totalTokens, type RunUsage } from '@axune/protocol';
 import { useWorkspace, type LiveRun } from '@/lib/WorkspaceContext';
 
 /**
@@ -289,6 +290,14 @@ function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
         <Text style={styles.panelStatus}>{statusLabel(run)}</Text>
       </View>
 
+      {/*
+        What it consumed. The provider has always reported this and Axune threw
+        it away, so there was no way to tell a cheap question from one that
+        spent a chunk of the day's allowance - and no way to explain a limit
+        when it arrived. Absent rather than zero when unreported.
+      */}
+      {run.usage ? <Text style={styles.usage}>{describeUsage(run.usage)}</Text> : null}
+
       {working && lastTool ? (
         <Text style={styles.doing} numberOfLines={1}>
           {lastTool.label}
@@ -490,6 +499,7 @@ function useStyles() {
     // person can act on ("not a git repository", "read-only run"), so it earns
     // body-text size instead of fine print.
     failure: { color: color.danger, fontSize: 13, lineHeight: 18 },
+    usage: { color: color.textSoft, fontSize: 11, fontVariant: ['tabular-nums'] },
     refusals: { gap: 4 },
     refusalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
     refusalText: { color: color.textMuted, fontSize: 12, lineHeight: 16, flex: 1 },
@@ -536,4 +546,32 @@ function useStyles() {
     // hardcoded white wash disappears entirely on the light end of the slider.
     sendIdle: { backgroundColor: color.panelAlt },
   });
+}
+
+/**
+ * One line describing what a run consumed.
+ *
+ * Tokens first, because that is what an allowance is measured in. The cost is
+ * second and explicitly labelled an equivalent: nothing here is billed - the
+ * run happens on a subscription already paid for - and showing a dollar figure
+ * without saying so would be a lie about how the product works.
+ */
+function describeUsage(usage: RunUsage): string {
+  const tokens = totalTokens(usage);
+  const shown =
+    tokens >= 1_000_000
+      ? `${(tokens / 1_000_000).toFixed(1)}M`
+      : tokens >= 1_000
+        ? `${Math.round(tokens / 1_000)}k`
+        : String(tokens);
+
+  const parts = [`${shown} tokens`];
+  // Cache reads are the cheap half and the reason a follow-up costs far less
+  // than the first question. Worth naming when it dominates, because otherwise
+  // the totals look alarming for no reason.
+  if (usage.cacheReadTokens > usage.cacheCreationTokens && usage.cacheReadTokens > 0) {
+    parts.push('mostly cached');
+  }
+  if (usage.costUsd !== null) parts.push(`≈$${usage.costUsd.toFixed(2)} of API equivalent`);
+  return parts.join(' · ');
 }

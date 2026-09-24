@@ -129,6 +129,9 @@ function trimRun(run: LiveRun, textLimit: number): LiveRun {
     // Defaulted here rather than left undefined so a restored run cannot be a
     // shape the rest of the app does not expect.
     error: run.error ?? null,
+    // Defaulted for the same reason as error: a thread from a build before
+    // usage existed must not come back as a shape the app does not expect.
+    usage: run.usage ?? null,
     changes: run.changes
       ? { ...run.changes, patch: cap(run.changes.patch, MAX_PATCH, 'diff') }
       : null,

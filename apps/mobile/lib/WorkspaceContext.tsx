@@ -121,6 +121,7 @@ const emptyRun = (runId: string, prompt: string, agentId: AgentId = 'claude-code
   lastEventAt: Date.now(),
   write: false,
   changes: null,
+  usage: null,
   decision: null,
 });
 

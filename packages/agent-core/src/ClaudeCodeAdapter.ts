@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentEvent } from '@axune/protocol';
+import type { AgentEvent, RunUsage } from '@axune/protocol';
 
 import {
   checkCommand,
@@ -129,6 +129,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const done = (async (): Promise<RunHandle> => {
       let outcome: RunHandle['outcome'] = 'completed';
+      // What the provider says this run consumed. Null when it said nothing,
+      // which a phone must render as absent rather than as zero.
+      let usage: RunUsage | null = null;
 
       emit({
         type: 'run_started',
@@ -239,6 +242,10 @@ ${INJECTION_NOTICE}`,
       const consume = async (resumeSessionId: string | null) => {
         for await (const message of attempt(resumeSessionId)) {
           providerSessionId = pickSessionId(message) ?? providerSessionId;
+          // Captured rather than emitted here: it belongs on `run_finished`,
+          // which is the one event a phone is guaranteed to see even if it
+          // reconnected halfway through.
+          if (message['type'] === 'result') usage = readUsage(message) ?? usage;
           for (const event of translate(message)) {
             emit(event);
           }
@@ -279,7 +286,7 @@ ${INJECTION_NOTICE}`,
         }
       }
 
-      emit({ type: 'run_finished', outcome });
+      emit({ type: 'run_finished', outcome, ...(usage ? { usage } : {}) });
       return { runId: request.runId, providerSessionId, outcome };
     })();
 
@@ -381,6 +388,9 @@ export function translate(message: UnknownMessage): AgentEventBody[] {
     if (subtype && subtype !== 'success') {
       events.push({ type: 'error', message: `Run ended: ${subtype}`, recoverable: true });
     }
+    // The result message carries what the run consumed, and this read only its
+    // subtype - so every token count the provider reported was discarded. The
+    // run_finished that follows is where it is attached; see start().
     return events;
   }
 
@@ -438,4 +448,32 @@ function isMissingSession(error: unknown): boolean {
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * What the provider says a run consumed, if it says anything.
+ *
+ * Total on purpose. Usage is reporting, and a run that produced a real answer
+ * must not be marked failed because a number moved in a shape this did not
+ * expect - the failure mode of a meter should be a missing reading, never a
+ * lost result.
+ */
+export function readUsage(message: UnknownMessage): RunUsage | null {
+  const usage = message['usage'];
+  if (typeof usage !== 'object' || usage === null) return null;
+  const u = usage as Record<string, unknown>;
+
+  const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  const orNull = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+  return {
+    inputTokens: num(u['input_tokens']),
+    outputTokens: num(u['output_tokens']),
+    cacheCreationTokens: num(u['cache_creation_input_tokens']),
+    cacheReadTokens: num(u['cache_read_input_tokens']),
+    costUsd: orNull(message['total_cost_usd']),
+    turns: orNull(message['num_turns']),
+    durationMs: orNull(message['duration_ms']),
+  };
 }
