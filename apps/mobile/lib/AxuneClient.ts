@@ -221,11 +221,20 @@ export class AxuneClient {
     this.send({ type: 'stop_run', runId });
   }
 
-  disconnect(): void {
+  /**
+   * Close the connection on purpose.
+   *
+   * `keepState` exists because closing after a failure used to erase the reason
+   * for it: the handshake rejection path called `onState('failed', detail)` and
+   * then this, one line later, which reported `idle` and cleared the detail the
+   * desktop had just sent. The pairing screen only shows a detail while the
+   * state is `failed`, so a version mismatch ended as a silent idle.
+   */
+  disconnect(keepState = false): void {
     this.deliberateClose = true;
     this.socket?.close();
     this.socket = null;
-    this.callbacks.onState('idle');
+    if (!keepState) this.callbacks.onState('idle');
   }
 
   get isConnected(): boolean {
@@ -511,7 +520,10 @@ export class AxuneClient {
 
     if (reply?.type === 'hello_rejected') {
       this.callbacks.onState('failed', reply.detail);
-      return this.disconnect();
+      // Keep the failure on screen. The desktop's reason - a version mismatch,
+      // an unusable handshake - is the only thing that tells someone what to do
+      // next, and it is worth nothing if the next line replaces it with idle.
+      return this.disconnect(true);
     }
     if (reply?.type !== 'hello_ok') return;
 

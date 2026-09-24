@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveRun } from '@/components/ui/home/ActiveRun';
-import { SinceLastChecked } from '@/components/ui/home/Activity';
+import { RecentActivity, SinceLastChecked } from '@/components/ui/home/Activity';
 import { Alerts, collectAlerts } from '@/components/ui/home/Alerts';
 import { LastRun } from '@/components/ui/home/LastRun';
 import { ago, RepoStatus } from '@/components/ui/home/RepoStatus';
@@ -240,12 +240,25 @@ export default function HomeScreen() {
             {/* Dismissed by its own close button and by nothing else - not a
                 timer, not leaving the screen. */}
             {id === 'activity' ? (
-              <SinceLastChecked
-                events={activity}
-                count={newSinceLastVisit}
-                lastCheckedAt={lastSeenAt}
-                onDismiss={markChecked}
-              />
+              <>
+                <SinceLastChecked
+                  events={activity}
+                  count={newSinceLastVisit}
+                  lastCheckedAt={lastSeenAt}
+                  onDismiss={markChecked}
+                />
+                {/*
+                  The events themselves, not only how many there were.
+                  SinceLastChecked reads kinds to produce counts and reads a
+                  summary only for branch and dirty/clean; everything else the
+                  desktop sends - why a write was downgraded to a read, which
+                  tool was denied and on what grounds, what was sent to which
+                  agent, a commit's subject, the time anything happened - was
+                  arriving and being dropped, because this component existed
+                  and was mounted nowhere.
+                */}
+                <RecentActivity events={activity} />
+              </>
             ) : null}
             {id === 'branches' ? (
               branches.length === 0 ? (
