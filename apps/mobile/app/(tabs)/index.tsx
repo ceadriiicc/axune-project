@@ -269,6 +269,17 @@ export default function HomeScreen() {
                     <Text style={styles.branchName} numberOfLines={1}>
                       {branch.name.replace(/^axune\//, '')}
                     </Text>
+                    {/*
+                      What the branch actually does. The desktop parses the
+                      commit subject and sends it, and both branch lists showed
+                      only a name, a file count and an age - which is not enough
+                      to decide whether to merge something or throw it away.
+                    */}
+                    {branch.subject ? (
+                      <Text style={styles.branchSubject} numberOfLines={1}>
+                        {branch.subject}
+                      </Text>
+                    ) : null}
                     <Text style={styles.branchMeta}>
                       {[`${branch.files} file${branch.files === 1 ? '' : 's'}`, ago(branch.at)].join(' · ')}
                     </Text>
@@ -552,7 +563,8 @@ const makeStyles = (color: Palette) =>
     },
 
     branchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-    branchName: { color: color.text, fontSize: 14, fontWeight: '600', flex: 1 },
+    branchName: { color: color.text, fontSize: 14, fontWeight: '600' },
+    branchSubject: { color: color.textMuted, fontSize: 12, flex: 1 },
     branchMeta: { color: color.textSoft, fontSize: 12 },
     agentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     agentDot: { width: 7, height: 7, borderRadius: 4 },

@@ -275,6 +275,9 @@ function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
   const agent = lookFor(run.agentId);
   const working = run.status === 'working';
   const lastTool = [...run.activity].reverse().find((line) => line.ok === null);
+  // Capped: a run that is being refused repeatedly should say so once or twice,
+  // not turn the panel into a list.
+  const refused = run.activity.filter((line) => line.ok === false).slice(-3);
 
   return (
     <View style={[styles.panel, { borderColor: `${agent.accent}33` }]}>
@@ -291,6 +294,26 @@ function AgentPanel({ run, onStop }: { run: LiveRun; onStop: () => void }) {
           {lastTool.label}
           {lastTool.detail ? ` · ${lastTool.detail}` : ''}
         </Text>
+      ) : null}
+
+      {/*
+        What the gate refused, and why. These survive the run finishing on
+        purpose: a refusal is often the most useful thing that happened - it is
+        how you learn the run was read-only, or that a command was not on the
+        allow-list - and it used to vanish the moment the agent moved on.
+      */}
+      {refused.length > 0 ? (
+        <View style={styles.refusals}>
+          {refused.map((line) => (
+            <View key={line.id} style={styles.refusalRow}>
+              <Ionicons name="close-circle-outline" size={13} color={color.danger} />
+              <Text style={styles.refusalText}>
+                {line.label}
+                {line.detail ? ` — ${line.detail}` : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
       ) : null}
 
       {/*
@@ -467,6 +490,9 @@ function useStyles() {
     // person can act on ("not a git repository", "read-only run"), so it earns
     // body-text size instead of fine print.
     failure: { color: color.danger, fontSize: 13, lineHeight: 18 },
+    refusals: { gap: 4 },
+    refusalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+    refusalText: { color: color.textMuted, fontSize: 12, lineHeight: 16, flex: 1 },
     thinking: { color: color.textSoft, fontSize: 13, fontStyle: 'italic' },
     answer: { borderRadius: radius.sm, padding: spacing.sm },
     stop: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },

@@ -222,7 +222,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   /** Activity ids already applied, so an at-least-once stream stays idempotent. */
   const seenActivityIds = useRef<Set<string>>(new Set());
 
-  const applyEvent = useCallback((event: AgentEvent) => {
+  const applyEvent = useCallback((event: AgentEvent, replayed = false) => {
+    // When this happened, rather than when the phone heard about it.
+    //
+    // `replayed` was already being passed by the client and ignored here, so
+    // every event in a reconnect replay was stamped with the moment it arrived.
+    // A run that ended an hour ago came back looking like it had just started,
+    // and the stall timer - which measures silence since `lastEventAt` - saw a
+    // freshly active run it should have been warning about.
+    //
+    // Live events keep phone time on purpose: the desktop's clock can be
+    // minutes off this one, and for something happening now that skew is a
+    // bigger error than the transit delay it would correct.
+    const at = replayed && event.ts ? event.ts : Date.now();
+
     setConversation((current) => {
       const index = current.findIndex((entry) => entry.runId === event.runId);
       const previous = index >= 0 ? current[index]! : emptyRun(event.runId, '', event.agentId);
@@ -230,8 +243,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       // created with: the desktop is the authority on which agent answered,
       // and a run started optimistically here should be corrected by it.
       const updated = reduceRun(
-        { ...previous, lastEventAt: Date.now(), agentId: event.agentId },
+        { ...previous, lastEventAt: at, agentId: event.agentId },
         event,
+        at,
       );
 
       if (updated.status !== 'working' && previous.status === 'working') {
@@ -582,10 +596,12 @@ export function useWorkspace(): WorkspaceState {
 }
 
 /** One run's state, advanced by one event. Pure, so it is easy to reason about. */
-function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
+function reduceRun(run: LiveRun, event: AgentEvent, at: number = Date.now()): LiveRun {
   switch (event.type) {
     case 'run_started':
-      return { ...run, prompt: event.prompt || run.prompt, status: 'working', startedAt: Date.now() };
+      // `at`, not `Date.now()`: a replayed run_started must not restart the
+      // clock at the moment of replay.
+      return { ...run, prompt: event.prompt || run.prompt, status: 'working', startedAt: at };
     case 'message_delta':
       return { ...run, text: run.text + event.text };
     case 'tool_started':
@@ -609,6 +625,14 @@ function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
       const index = run.activity.findIndex(
         (line) => line.callId === event.toolCallId && line.ok === null,
       );
+      // Why, when it did not work. The desktop sends `Denied: <reason>` here
+      // and the reason was thrown away, so a refusal rendered as a row saying
+      // "denied" and nothing else - on the one screen where knowing what was
+      // refused is the entire point. Kept only for failures: a successful
+      // tool's output is file contents, which belongs in the reply rather than
+      // in a status line.
+      const reason = !event.ok && event.output ? shortReason(event.output) : undefined;
+
       if (index < 0) {
         // A finish with no start: worth showing rather than dropping, since it
         // means the desktop refused something before the call was announced.
@@ -616,12 +640,23 @@ function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
           ...run,
           activity: [
             ...run.activity,
-            { id: `${event.seq}`, label: event.ok ? 'done' : 'denied', ok: event.ok },
+            {
+              id: `${event.seq}`,
+              label: event.ok ? 'done' : 'denied',
+              ok: event.ok,
+              ...(reason ? { detail: reason } : {}),
+            },
           ],
         };
       }
       const activity = [...run.activity];
-      activity[index] = { ...activity[index]!, ok: event.ok };
+      activity[index] = {
+        ...activity[index]!,
+        ok: event.ok,
+        // The path a Read announced is less useful than the reason it was
+        // refused, so a failure's reason replaces it.
+        ...(reason ? { detail: reason } : {}),
+      };
       return { ...run, activity };
     }
     case 'run_finished':
@@ -645,6 +680,20 @@ function reduceRun(run: LiveRun, event: AgentEvent): LiveRun {
     default:
       return run;
   }
+}
+
+/**
+ * A tool failure, short enough for one line.
+ *
+ * Tool output can be a stack trace or a page of shell noise. The first
+ * non-empty line is nearly always the sentence worth reading - "Denied: this
+ * run is read-only" - and what follows is context nobody scrolls a status row
+ * to find.
+ */
+function shortReason(output: string): string {
+  const first = output.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+  const trimmed = first.replace(/^Denied:\s*/i, '');
+  return trimmed.length > 120 ? `${trimmed.slice(0, 119)}…` : trimmed;
 }
 
 function summarise(run: LiveRun): RunSummary {

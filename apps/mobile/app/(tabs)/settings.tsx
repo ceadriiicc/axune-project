@@ -79,7 +79,11 @@ export default function SettingsScreen() {
           <Row
             icon="folder-open-outline"
             label="Project"
-            value={project?.name ?? '—'}
+            // The path, not only the name. The desktop sends it and nothing
+            // rendered it, so two checkouts of the same repository on the same
+            // machine were indistinguishable here - which is precisely when
+            // you most want to know which one an agent is about to touch.
+            value={project?.path ?? project?.name ?? '—'}
             styles={styles}
           />
           <Row
