@@ -47,8 +47,19 @@ export class FakePhone extends EventEmitter {
    * key to play an attacker who reached the right address with the wrong
    * identity.
    */
-  static connect(port: number, desktopPublicKey: string): Promise<FakePhone> {
-    const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+  static connect(
+    port: number,
+    desktopPublicKey: string,
+    /**
+     * Join through a relay rather than dialling the desktop directly.
+     *
+     * The same handshake either way, which is the claim worth testing: the
+     * desktop's security does not know or care which route a phone took, so a
+     * relay must not need a single line of new security code to be safe.
+     */
+    viaRelay?: { url: string; relayProtocolVersion: number },
+  ): Promise<FakePhone> {
+    const socket = new WebSocket(viaRelay ? viaRelay.url : `ws://127.0.0.1:${port}`);
     const phone = new FakePhone(socket);
     const theirKey = fromBase64Url(desktopPublicKey);
 
@@ -57,17 +68,46 @@ export class FakePhone extends EventEmitter {
       socket.once('open', () => {
         const ephemeral = generateIdentity(nodeRandom);
         const salt = toBase64Url(nodeRandom(16));
-        socket.send(
-          JSON.stringify({
-            type: 'hello',
-            protocolVersion: PROTOCOL_VERSION,
-            publicKey: toBase64Url(ephemeral.publicKey),
-            salt,
-          } satisfies ClientHello),
-        );
+
+        const sendHello = () =>
+          socket.send(
+            JSON.stringify({
+              type: 'hello',
+              protocolVersion: PROTOCOL_VERSION,
+              publicKey: toBase64Url(ephemeral.publicKey),
+              salt,
+            } satisfies ClientHello),
+          );
+
+        // Over a relay the hello must wait. The relay answers the join with a
+        // status of its own, and a hello sent before that answer would be
+        // delivered to nobody - there is no desktop on the other side of this
+        // socket yet.
+        let joined = !viaRelay;
+        if (viaRelay) {
+          socket.send(
+            JSON.stringify({
+              type: 'connect',
+              protocolVersion: viaRelay.relayProtocolVersion,
+              publicKey: desktopPublicKey,
+            }),
+          );
+        } else {
+          sendHello();
+        }
 
         socket.on('message', (raw) => {
           const text = String(raw);
+
+          if (!joined) {
+            const status = JSON.parse(text) as { type?: string; ok?: boolean; detail?: string };
+            if (status.type !== 'relay_status') {
+              return reject(new Error(`expected a relay answer, got: ${text.slice(0, 80)}`));
+            }
+            if (!status.ok) return reject(new Error(`relay refused: ${status.detail}`));
+            joined = true;
+            return sendHello();
+          }
 
           if (!phone.channel) {
             const reply = JSON.parse(text) as ServerHello;

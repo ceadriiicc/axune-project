@@ -223,6 +223,23 @@ export class AxuneServer {
     );
   }
 
+  /**
+   * Accept a connection this server did not open.
+   *
+   * A relay hands over something that behaves like a socket but arrived by a
+   * different route. Everything below treats it identically - the handshake,
+   * the pairing check, device trust, replay - which is the property that makes
+   * being reachable from outside cost no new security code. Adding a second
+   * path through the gate would have been the way to get that wrong.
+   */
+  acceptSocket(socket: AcceptableSocket): void {
+    // Cast, because a relay's socket is not a `ws` WebSocket and never will be.
+    // What makes this safe is that `AcceptableSocket` lists every member this
+    // class actually touches, so widening the usage below breaks the build
+    // rather than breaking a phone that is far away from the desk.
+    this.onConnection(socket as unknown as WebSocket);
+  }
+
   private onConnection(socket: WebSocket): void {
     socket.on('close', () => {
       if (this.authed.has(socket)) {
@@ -728,4 +745,26 @@ export class AxuneServer {
 function truncate(text: string, max = 90): string {
   const line = text.replace(/\s+/g, ' ').trim();
   return line.length > max ? `${line.slice(0, max)}…` : line;
+}
+
+/**
+ * Everything `AxuneServer` needs from a connection.
+ *
+ * Written out rather than imported from `ws`, because a relay hands over
+ * something that only behaves like a socket. Keeping the list explicit is what
+ * makes `acceptSocket`'s cast honest: if this class starts using a member that
+ * is not here, the relay's implementation stops satisfying it and the build
+ * says so.
+ */
+export interface AcceptableSocket {
+  // The listener's arguments are deliberately loose. Node's own EventEmitter
+  // types them this way, and narrowing here would make every real socket -
+  // including `ws`'s - fail to satisfy the interface through contravariance,
+  // which would defeat the point of writing it down.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: 'message' | 'close', handler: (...args: any[]) => void): unknown;
+  send(data: string): void;
+  close(): void;
+  readonly readyState: number;
+  readonly OPEN: number;
 }

@@ -178,6 +178,25 @@ async function main(): Promise<void> {
     return `counted ${grew} bytes, retains no payload`;
   });
 
+  await check('a second phone cannot steal a connected desktop', async () => {
+    // Without this the relay would silently re-point the desktop at the new
+    // phone, and the first phone would go quiet with no explanation - still
+    // sending frames, delivered nowhere. Exactly the failure shape this project
+    // keeps meeting.
+    const second = await Peer.open(port);
+    second.send({ type: 'connect', protocolVersion: RELAY_PROTOCOL_VERSION, publicKey: DESKTOP });
+    const reply = JSON.parse(await second.next()) as { ok: boolean; reason?: string };
+    second.close();
+    if (reply.ok) return 'FAIL: the second phone took the desktop';
+
+    // And the first phone is still connected, not collateral damage.
+    if (!phone) return 'FAIL: no first phone';
+    phone.send('still-here');
+    const atDesktop = await desktop.next();
+    if (atDesktop !== 'still-here') return `FAIL: the first phone lost its link: "${atDesktop}"`;
+    return `refused with "${reply.reason}", and the first phone still works`;
+  });
+
   await check('a random guess at a key reaches nothing', async () => {
     const stranger = await Peer.open(port);
     stranger.send({

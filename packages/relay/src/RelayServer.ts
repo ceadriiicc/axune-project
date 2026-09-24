@@ -167,6 +167,18 @@ export class RelayServer {
       });
     }
 
+    // One phone per desktop. Without this a second phone would silently
+    // re-point the desktop at itself, and the first phone would go quiet with
+    // no explanation - its frames still sent, and delivered nowhere.
+    if (this.partners.has(desktop)) {
+      return this.send(socket, {
+        type: 'relay_status',
+        ok: false,
+        reason: 'busy',
+        detail: 'That desktop is already connected to another phone.',
+      });
+    }
+
     this.partners.set(socket, desktop);
     this.partners.set(desktop, socket);
     this.send(socket, { type: 'relay_status', ok: true });
