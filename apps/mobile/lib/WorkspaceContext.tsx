@@ -160,6 +160,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     agentsRef.current = agents;
   }, [agents]);
   /**
+   * The current conversation, readable without being inside a state updater.
+   *
+   * `newConversation` used to archive by calling `setThreads` from inside
+   * `setConversation`'s updater. React makes no promise about when a state
+   * update raised from inside another updater is applied, and the symptom was
+   * exactly that: a conversation was archived but did not appear under
+   * "Previous conversations" until the next interaction, so starting two new
+   * sessions in a row looked like the first one had been lost.
+   */
+  const conversationRef = useRef<LiveRun[]>([]);
+  useEffect(() => {
+    conversationRef.current = conversation;
+  }, [conversation]);
+  /**
    * Nothing is written to disk until what is on disk has been read.
    * Without this the first render's empty state races the load and erases
    * every stored conversation on launch.
@@ -337,16 +351,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * conversation is often the thing you wanted to keep.
    */
   const newConversation = useCallback(() => {
-    setConversation((current) => {
-      if (current.length > 0) {
-        const id = conversationIdRef.current;
-        setThreads((past) => [
-          { id, runs: current, startedAt: current[0]?.startedAt ?? Date.now() },
-          ...past.filter((thread) => thread.id !== id),
-        ]);
-      }
-      return [];
-    });
+    // Both updates raised from here, side by side, rather than one from inside
+    // the other. React batches these into a single render, so the archived
+    // conversation is in `threads` by the time the empty state draws.
+    const current = conversationRef.current;
+    if (current.length > 0) {
+      const id = conversationIdRef.current;
+      setThreads((past) => [
+        { id, runs: current, startedAt: current[0]?.startedAt ?? Date.now() },
+        ...past.filter((thread) => thread.id !== id),
+      ]);
+    }
+    setConversation([]);
     conversationIdRef.current = randomId();
   }, []);
 
@@ -358,18 +374,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     (id: string) => {
       const thread = threads.find((entry) => entry.id === id);
       if (!thread) return;
-      setConversation((current) => {
-        if (current.length > 0) {
-          const currentId = conversationIdRef.current;
-          setThreads((past) => [
-            { id: currentId, runs: current, startedAt: current[0]?.startedAt ?? Date.now() },
-            ...past.filter((entry) => entry.id !== currentId && entry.id !== id),
-          ]);
-        } else {
-          setThreads((past) => past.filter((entry) => entry.id !== id));
-        }
-        return thread.runs;
-      });
+
+      // Same correction as `newConversation`: raised alongside rather than from
+      // inside the other updater, so swapping conversations lands in one render
+      // instead of leaving the list a step behind.
+      const current = conversationRef.current;
+      if (current.length > 0) {
+        const currentId = conversationIdRef.current;
+        setThreads((past) => [
+          { id: currentId, runs: current, startedAt: current[0]?.startedAt ?? Date.now() },
+          ...past.filter((entry) => entry.id !== currentId && entry.id !== id),
+        ]);
+      } else {
+        setThreads((past) => past.filter((entry) => entry.id !== id));
+      }
+      setConversation(thread.runs);
       conversationIdRef.current = id;
     },
     [threads],
