@@ -32,19 +32,35 @@ const common = {
   logLevel: 'warning',
 };
 
+/**
+ * Left out of the bundle on purpose.
+ *
+ * The Agent SDK finds its own native binary with a dynamic require -
+ * `@anthropic-ai/claude-agent-sdk-${platform}-${arch}` - which esbuild cannot
+ * see, so bundling it produced a main.cjs that resolved that package from
+ * `dist/` and never found it. Every agent run through the packaged app failed
+ * with "native CLI binary for win32-x64 not found", while the same code run
+ * unbundled through tsx worked perfectly - which is why it went undiagnosed:
+ * the harness exercises the loader that works.
+ *
+ * Required from node_modules at runtime instead, which is also why the SDK is a
+ * direct dependency of this app rather than only of agent-core.
+ */
+const runtimeOnly = ['electron', '@anthropic-ai/claude-agent-sdk'];
+
 await build({
   ...common,
   ...nodeOnly,
   entryPoints: ['electron/main.ts'],
   outfile: 'dist/main.cjs',
-  external: ['electron'],
+  external: runtimeOnly,
 });
 await build({
   ...common,
   ...nodeOnly,
   entryPoints: ['electron/preload.ts'],
   outfile: 'dist/preload.cjs',
-  external: ['electron'],
+  external: runtimeOnly,
 });
 await build({
   ...common,
@@ -62,6 +78,18 @@ const rendered = readFileSync('renderer/renderer.js', 'utf8');
 if (/\brequire\s*\(/.test(rendered)) {
   throw new Error(
     'renderer.js contains require() — it will throw on load in the renderer, where Node is not available.',
+  );
+}
+
+// The same class of failure, in the other direction. If the Agent SDK is ever
+// inlined again, every run through the packaged app dies with "native CLI
+// binary not found" while the test harnesses keep passing, because they load
+// the same code unbundled. That gap cost an afternoon of chasing the wrong
+// hypotheses, so it is a build failure now rather than a runtime one.
+const main = readFileSync('dist/main.cjs', 'utf8');
+if (!main.includes('require("@anthropic-ai/claude-agent-sdk")')) {
+  throw new Error(
+    'main.cjs does not require the Agent SDK at runtime — it has been inlined, and its native binary lookup will fail.',
   );
 }
 
