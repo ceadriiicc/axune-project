@@ -21,6 +21,7 @@ import React, {
 } from 'react';
 
 import { AxuneClient, type ConnectionState } from './AxuneClient';
+import { reduceRun, type ActivityLine, type LiveRun } from './runReducer';
 import {
   clearPairing,
   loadLastSeenAt,
@@ -31,71 +32,16 @@ import {
 import { phoneRandom } from './random';
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './threadStore';
 
+// Re-exported so the many screens importing these from here keep working; the
+// definitions live in runReducer because that is where they are acted on.
+export { reduceRun, type ActivityLine, type LiveRun };
+
 /**
  * All state the phone holds about the desktop it is driving.
  *
  * Everything here is built from agent events and transport messages — nothing
  * parses provider output, which is what lets a second agent slot in without
  * touching any screen.
- */
-export interface LiveRun {
-  runId: string;
-  prompt: string;
-  /** Streamed assistant text, accumulated from message_delta. */
-  text: string;
-  activity: ActivityLine[];
-  /**
-   * Which agent produced this run.
-   *
-   * Every `AgentEvent` has carried this since the protocol was written and the
-   * phone threw it away on arrival, so four separate places hardcoded
-   * `AGENTS.claude` and rendered every run as Claude Code in Claude's colours.
-   * Invisible while there is one agent, and the first thing that breaks when
-   * there are two.
-   */
-  agentId: AgentId;
-  status: 'working' | 'finished' | 'stopped' | 'failed';
-  outcome: string | null;
-  /**
-   * Why it failed, in words, when the desktop said.
-   *
-   * Separate from `outcome`, which carries either a status word from
-   * `run_finished` or an error message from `error`, depending on which
-   * arrived last. That overloading is how the reason went missing: the message
-   * was stored and then never read, so a failed run rendered as the single
-   * word "failed" while the desktop had already sent an explanation.
-   */
-  error: string | null;
-  /** For elapsed time, and for spotting a run that has gone quiet. */
-  startedAt: number | null;
-  lastEventAt: number | null;
-  /** True when this run was allowed to edit files. */
-  write: boolean;
-  /** What it produced, once finished. Null while running or for read runs. */
-  changes: ChangeSet | null;
-  /** Set once the user has kept or discarded the branch. */
-  decision: 'keep' | 'discard' | null;
-}
-
-export interface ActivityLine {
-  id: string;
-  label: string;
-  ok: boolean | null;
-  /** The file or command, so "Read" can say what it read. */
-  detail?: string;
-  /**
-   * The provider's id for this tool call, so finishing one updates the row it
-   * started rather than adding another.
-   */
-  callId?: string;
-}
-
-/**
- * A conversation set aside so it can be returned to.
- *
- * Each thread carries the id the desktop keys the agent's own resumable
- * session off, so reopening one and asking a follow-up continues that
- * conversation rather than starting a new one.
  */
 export interface Thread {
   id: string;
@@ -596,106 +542,6 @@ export function useWorkspace(): WorkspaceState {
 }
 
 /** One run's state, advanced by one event. Pure, so it is easy to reason about. */
-function reduceRun(run: LiveRun, event: AgentEvent, at: number = Date.now()): LiveRun {
-  switch (event.type) {
-    case 'run_started':
-      // `at`, not `Date.now()`: a replayed run_started must not restart the
-      // clock at the moment of replay.
-      return { ...run, prompt: event.prompt || run.prompt, status: 'working', startedAt: at };
-    case 'message_delta':
-      return { ...run, text: run.text + event.text };
-    case 'tool_started':
-      return {
-        ...run,
-        activity: [
-          ...run.activity,
-          {
-            id: `${event.seq}`,
-            callId: event.toolCallId,
-            label: event.toolName,
-            ok: null,
-            detail: shortDetail(event.input),
-          },
-        ],
-      };
-    case 'tool_finished': {
-      // Resolve the row this call started rather than appending another. The
-      // list previously grew two entries per tool - "Read" then "done" - which
-      // is how a handful of file reads became a screen of noise.
-      const index = run.activity.findIndex(
-        (line) => line.callId === event.toolCallId && line.ok === null,
-      );
-      // Why, when it did not work. The desktop sends `Denied: <reason>` here
-      // and the reason was thrown away, so a refusal rendered as a row saying
-      // "denied" and nothing else - on the one screen where knowing what was
-      // refused is the entire point. Kept only for failures: a successful
-      // tool's output is file contents, which belongs in the reply rather than
-      // in a status line.
-      const reason = !event.ok && event.output ? shortReason(event.output) : undefined;
-
-      if (index < 0) {
-        // A finish with no start: worth showing rather than dropping, since it
-        // means the desktop refused something before the call was announced.
-        return {
-          ...run,
-          activity: [
-            ...run.activity,
-            {
-              id: `${event.seq}`,
-              label: event.ok ? 'done' : 'denied',
-              ok: event.ok,
-              ...(reason ? { detail: reason } : {}),
-            },
-          ],
-        };
-      }
-      const activity = [...run.activity];
-      activity[index] = {
-        ...activity[index]!,
-        ok: event.ok,
-        // The path a Read announced is less useful than the reason it was
-        // refused, so a failure's reason replaces it.
-        ...(reason ? { detail: reason } : {}),
-      };
-      return { ...run, activity };
-    }
-    case 'run_finished':
-      return {
-        ...run,
-        status:
-          event.outcome === 'completed'
-            ? 'finished'
-            : event.outcome === 'stopped'
-              ? 'stopped'
-              : 'failed',
-        outcome: event.outcome,
-      };
-    case 'error':
-      // A recoverable error is a note, not an ending - the run carries on, and
-      // marking it failed here would have the card contradict the reply still
-      // arriving underneath it.
-      return event.recoverable
-        ? { ...run, error: event.message }
-        : { ...run, status: 'failed', outcome: event.message, error: event.message };
-    default:
-      return run;
-  }
-}
-
-/**
- * A tool failure, short enough for one line.
- *
- * Tool output can be a stack trace or a page of shell noise. The first
- * non-empty line is nearly always the sentence worth reading - "Denied: this
- * run is read-only" - and what follows is context nobody scrolls a status row
- * to find.
- */
-function shortReason(output: string): string {
-  const first = output.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
-  const trimmed = first.replace(/^Denied:\s*/i, '');
-  return trimmed.length > 120 ? `${trimmed.slice(0, 119)}…` : trimmed;
-}
-
 function summarise(run: LiveRun): RunSummary {
   return {
     runId: run.runId,
@@ -707,19 +553,6 @@ function summarise(run: LiveRun): RunSummary {
     filesRead: run.activity.filter((a) => a.label === 'Read').length,
     commands: run.activity.filter((a) => a.label === 'Bash').length,
   };
-}
-
-/** Pull a filename or command out of a tool input for a one-line label. */
-function shortDetail(input: string): string | undefined {
-  try {
-    const parsed = JSON.parse(input) as Record<string, unknown>;
-    const value = parsed['file_path'] ?? parsed['pattern'] ?? parsed['command'];
-    if (typeof value !== 'string') return undefined;
-    const tail = value.split(/[\\/]/).pop() ?? value;
-    return tail.length > 42 ? `${tail.slice(0, 42)}…` : tail;
-  } catch {
-    return undefined;
-  }
 }
 
 function firstLine(text: string): string {
