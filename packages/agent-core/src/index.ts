@@ -5,4 +5,14 @@ export * from './AgentAdapter';
 export { ClaudeCodeAdapter, translate } from './ClaudeCodeAdapter';
 export { GeminiAdapter } from './GeminiAdapter';
 export { isReadOnlyShellCommand } from './readOnlyShell';
-export { checkCommand, checkPath, MAX_TURNS, redactSecrets } from './safety';
+// `checkTool` is exported so it can be attacked from a suite. It was not, which
+// is the reason nothing ever tested the decision of which tools an agent may
+// use - the policy was unreachable from outside this package.
+export {
+  checkCommand,
+  checkPath,
+  checkTool,
+  MAX_TURNS,
+  redactSecrets,
+  SHELL_TOOL,
+} from './safety';

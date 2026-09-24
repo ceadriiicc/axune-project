@@ -8,6 +8,7 @@ import {
   checkCommand,
   checkPath,
   checkTool,
+  SHELL_TOOL,
   INJECTION_NOTICE,
   MAX_TURNS,
   redactSecrets,
@@ -22,9 +23,6 @@ import type {
 } from './AgentAdapter';
 
 const execFileAsync = promisify(execFile);
-
-/** Tools that only read. Everything else is a write or a command in Phase 1 terms. */
-const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'TodoWrite']);
 
 /**
  * Hard deny list for read-only runs.
@@ -207,7 +205,7 @@ ${INJECTION_NOTICE}`,
                 return { behavior: 'deny' as const, message: reason };
               };
 
-              const toolCheck = checkTool(toolName);
+              const toolCheck = checkTool(toolName, mode);
               if (!toolCheck.allowed) return deny(toolCheck.reason!);
 
               // Confine every file operation to the directory this run owns.
@@ -217,13 +215,14 @@ ${INJECTION_NOTICE}`,
               const pathCheck = checkPath(request.cwd, toolInput ?? {});
               if (!pathCheck.allowed) return deny(pathCheck.reason!);
 
-              if (toolName === 'Bash') {
+              // `checkTool` has already refused everything that is not on the
+              // allow-list, in either mode, so this only needs to inspect the
+              // one tool that carries a command. It is compared against the
+              // exported name rather than the literal 'Bash': a second shell
+              // must be added in one place, deliberately, or not at all.
+              if (toolName === SHELL_TOOL) {
                 const verdict = checkCommand(toolInput?.['command'], mode);
                 if (!verdict.allowed) return deny(verdict.reason!);
-              } else if (request.readOnly && !READ_ONLY_TOOLS.has(toolName)) {
-                return deny(
-                  'This Axune run is read-only. Inspect and report instead of changing anything.',
-                );
               }
 
               // Deliberately silent on approval. `translate` already reports a

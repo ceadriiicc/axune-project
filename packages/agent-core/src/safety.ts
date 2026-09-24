@@ -53,7 +53,54 @@ const SECRET_PATTERNS: RegExp[] = [
  * rarely needed to investigate a repository, and can be reintroduced behind a
  * domain allowlist when something actually needs them.
  */
-const NETWORK_TOOLS = new Set(['WebFetch', 'WebSearch']);
+/**
+ * Every tool a run may use, by name and by mode.
+ *
+ * ## This is an allow-list, and it used to be a deny-list
+ *
+ * It previously refused `WebFetch` and `WebSearch` and returned allowed for
+ * everything else. That is only sound if the agent's tool surface is a known,
+ * closed set - and it is not. Asked directly, the SDK reports **26 tools** in a
+ * run against this repository, among them `PowerShell` (a second shell),
+ * `Task` and `Workflow` (which spawn further agents), `RemoteTrigger`,
+ * `PushNotification`, `SendMessage` and `ShareOnboardingGuide` (which leave the
+ * machine), and `CronCreate` (which schedules execution for later). None was in
+ * the deny-list, so each was permitted by default.
+ *
+ * A read-only run was still safe, because the adapter separately refused
+ * anything outside its own small allow-list. **A write run was not**: that
+ * branch was written as `else if (readOnly && ...)`, so with `readOnly` false
+ * nothing checked a non-`Bash` tool at all.
+ *
+ * The lesson is one this codebase has already paid for once. In Stage 2,
+ * `isGitRepo` was computed as `branch !== "(not a git repo)"` - a comparison
+ * against one value that silently turned writes back on the moment a second
+ * value existed. This was the same shape inverted: `toolName === 'Bash'` gates
+ * the command policy, and the moment a second shell tool exists the policy has
+ * a hole. A second shell tool now exists.
+ *
+ * So the default is denial. A tool added by a future CLI release is refused
+ * until someone reads it and decides, rather than being permitted until someone
+ * notices.
+ */
+
+/** Tools any run may use. Their path arguments are still confined by `checkPath`. */
+const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'TodoWrite']);
+
+/** Tools only a write run may use. A read run is refused them by name, not by luck. */
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * The one shell, whose argument goes through `checkCommand`.
+ *
+ * `PowerShell` is deliberately absent rather than added beside it. The command
+ * policy is written and tested against POSIX tokens; PowerShell's aliases
+ * (`rm` for `Remove-Item`, `iwr` for `Invoke-WebRequest`) and cmdlet naming
+ * were never considered when it was designed. `checkCommand` denies by default
+ * and so would refuse most of it by accident, but a boundary that holds by
+ * accident is not a boundary. Bash covers everything Axune legitimately needs.
+ */
+export const SHELL_TOOL = 'Bash';
 
 /** Commands refused in every mode, including write runs. */
 const NEVER_ALLOWED = new Set([
@@ -84,25 +131,31 @@ export interface PolicyDecision {
   reason?: string;
 }
 
-/** A tool an agent may not use at all in this build. */
-export function checkTool(toolName: string): PolicyDecision {
-  if (NETWORK_TOOLS.has(toolName)) {
+/**
+ * Whether this run may use this tool at all.
+ *
+ * Denial is the default - see the note on the lists above. The reason is
+ * returned verbatim to the agent and shown on the phone, so it names the tool
+ * rather than saying "not permitted", which otherwise reads as a malfunction.
+ */
+export function checkTool(toolName: string, mode: 'read' | 'write'): PolicyDecision {
+  if (toolName === SHELL_TOOL) return { allowed: true };
+  if (READ_TOOLS.has(toolName)) return { allowed: true };
+
+  if (WRITE_TOOLS.has(toolName)) {
+    if (mode === 'write') return { allowed: true };
     return {
       allowed: false,
-      reason: `${toolName} is disabled. Axune does not let an agent send data off this machine.`,
+      reason: 'This Axune run is read-only. Inspect and report instead of changing anything.',
     };
   }
-  return { allowed: true };
+
+  return {
+    allowed: false,
+    reason: `${toolName} is not a tool Axune permits. Axune runs an agent against your repository and does not let it reach beyond that.`,
+  };
 }
 
-/**
- * Confine a tool's file argument to the directory the run owns, and refuse
- * secrets outright.
- *
- * Symlinks are resolved first: without that, an agent could create a link
- * inside its worktree pointing anywhere on the machine and write straight
- * through the boundary.
- */
 export function checkPath(root: string, input: Record<string, unknown>): PolicyDecision {
   for (const key of PATH_KEYS) {
     const value = input[key];
