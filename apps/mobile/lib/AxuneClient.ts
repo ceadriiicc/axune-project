@@ -17,6 +17,7 @@ import type {
   UsageDay,
 } from '@axune/protocol';
 import { PROTOCOL_VERSION } from '@axune/protocol';
+import { decideHeartbeat, IDLE_PING_MS } from './heartbeat';
 import {
   SecureChannel,
   fromBase64Url,
@@ -59,6 +60,7 @@ export interface ClientCallbacks {
  */
 const CONNECT_TIMEOUT_MS = 3500;
 
+
 export class AxuneClient {
   private socket: WebSocket | null = null;
   /**
@@ -87,6 +89,14 @@ export class AxuneClient {
    * Restored from disk and offered here so that question gets asked once.
    */
   private pendingRunId: string | null = null;
+
+  /** Proof of life: when anything last arrived from the desktop. */
+  private lastMessageAt = 0;
+
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+
+  /** When the unanswered ping was sent, or null when nothing is outstanding. */
+  private pingedAt: number | null = null;
 
   /**
    * Tell the client which run to ask about on the next resume. Null when the
@@ -277,6 +287,7 @@ export class AxuneClient {
    */
   disconnect(keepState = false): void {
     this.deliberateClose = true;
+    this.stopHeartbeat();
     this.socket?.close();
     this.socket = null;
     if (!keepState) this.callbacks.onState('idle');
@@ -435,6 +446,10 @@ export class AxuneClient {
 
     socket.onclose = () => {
       this.socket = null;
+      // The socket this was watching is gone. `checkAlive` would bail out on
+      // its own, but leaving a timer running against nothing is how a later
+      // reconnect ends up with two.
+      this.stopHeartbeat();
       if (this.deliberateClose) return;
       if (!settled) {
         // Refused before it ever opened: that address is wrong, not the
@@ -447,11 +462,62 @@ export class AxuneClient {
     };
   }
 
+  /**
+   * Start checking that the connection is still real.
+   *
+   * Idempotent: a reconnect calls this again and must not end up with two
+   * timers racing to declare the same socket dead.
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.lastMessageAt = Date.now();
+    this.heartbeat = setInterval(() => this.checkAlive(), IDLE_PING_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = null;
+    this.pingedAt = null;
+  }
+
+  private checkAlive(): void {
+    const socket = this.socket;
+    const action = decideHeartbeat({
+      now: Date.now(),
+      lastMessageAt: this.lastMessageAt,
+      pingedAt: this.pingedAt,
+      socketOpen: socket?.readyState === 1,
+    });
+
+    if (action === 'ping') {
+      this.pingedAt = Date.now();
+      this.send({ type: 'ping' });
+      return;
+    }
+
+    if (action === 'declare-dead' && socket) {
+      // Closing is what turns an invisible dead socket into the reconnect that
+      // was always the right response - the close handler already knows how to
+      // walk the candidate addresses.
+      this.pingedAt = null;
+      this.callbacks.onState('reconnecting', 'Lost contact with your desktop.');
+      socket.close();
+    }
+  }
+
   private handle(message: ServerMessage): void {
+    // Anything arriving is proof the line is alive, not just a pong. A reply to
+    // something else answers the question the ping was asking.
+    this.lastMessageAt = Date.now();
+    this.pingedAt = null;
+
     switch (message.type) {
       case 'paired':
         this.sessionToken = message.sessionToken;
         this.callbacks.onState('connected');
+        // Only once the link is actually usable. Pinging during a handshake
+        // would ask a question the desktop is not yet listening for.
+        this.startHeartbeat();
         this.callbacks.onMachine?.(message.machine, message.capability);
         this.callbacks.onPaired(message.project, message.agents);
         return;
@@ -463,6 +529,9 @@ export class AxuneClient {
 
       case 'resumed':
         this.callbacks.onState('connected');
+        // Only once the link is actually usable. Pinging during a handshake
+        // would ask a question the desktop is not yet listening for.
+        this.startHeartbeat();
         if (message.missedEvents > 0) {
           this.callbacks.onGap?.(message.runId, message.missedEvents);
         }
@@ -470,6 +539,11 @@ export class AxuneClient {
 
       case 'project_changed':
         this.callbacks.onProject?.(message.project);
+        return;
+
+      case 'pong':
+        // Nothing to do: `handle` has already recorded that something arrived,
+        // which is the entire content of a pong.
         return;
 
       case 'branches':

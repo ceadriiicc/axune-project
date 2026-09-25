@@ -8,6 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "try:heartbeat": "tsx scripts/tryHeartbeat.ts",
     "try:threads": "tsx scripts/tryThreads.ts",
     "try:pairing": "tsx scripts/tryPairing.ts",
     "try:verification": "tsx scripts/tryVerification.ts",
