@@ -75,6 +75,49 @@ export class AxuneClient {
   /** Highest seq seen per run, so a resume asks for exactly what it missed. */
   private readonly lastSeq = new Map<string, number>();
   private activeRunId: string | null = null;
+
+  /**
+   * A run that was still working when the app was last closed.
+   *
+   * `activeRunId` only ever names a run started by *this* process, so after a
+   * force-quit it is null and the resume asked about `none` - while the desktop
+   * carried on, finished the run, and still holds every event. The result was
+   * sitting one question away and nobody asked it.
+   *
+   * Restored from disk and offered here so that question gets asked once.
+   */
+  private pendingRunId: string | null = null;
+
+  /**
+   * Tell the client which run to ask about on the next resume. Null when the
+   * last session ended with nothing in flight.
+   */
+  setPendingRunId(runId: string | null): void {
+    this.pendingRunId = runId;
+  }
+
+  /**
+   * What to ask for on a resume.
+   *
+   * `lastSeq` is -1 for a run recovered from disk: sequence numbers are held in
+   * memory and did not survive the restart, so the honest answer is "I have
+   * nothing", and the desktop replays the run from its beginning.
+   */
+  private resumeTarget(): { runId: string; lastSeq: number } {
+    if (this.activeRunId) {
+      return { runId: this.activeRunId, lastSeq: this.lastSeq.get(this.activeRunId) ?? -1 };
+    }
+    if (this.pendingRunId) {
+      const runId = this.pendingRunId;
+      // Consumed: adopted as the active run so replayed events update `lastSeq`
+      // normally, and a later reconnect asks from where this one got to rather
+      // than replaying the whole run again.
+      this.pendingRunId = null;
+      this.activeRunId = runId;
+      return { runId, lastSeq: -1 };
+    }
+    return { runId: 'none', lastSeq: -1 };
+  }
   private reconnectAttempts = 0;
   private deliberateClose = false;
 
@@ -134,8 +177,7 @@ export class AxuneClient {
       this.send({
         type: 'resume',
         token: sessionToken,
-        runId: this.activeRunId ?? 'none',
-        lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
+        ...this.resumeTarget(),
         lastSeenAt: this.lastSeenAt,
       });
     });
@@ -487,8 +529,7 @@ export class AxuneClient {
         this.send({
           type: 'resume',
           token: this.sessionToken!,
-          runId: this.activeRunId ?? 'none',
-          lastSeq: this.activeRunId ? (this.lastSeq.get(this.activeRunId) ?? -1) : -1,
+          ...this.resumeTarget(),
         });
       });
     }, delay);

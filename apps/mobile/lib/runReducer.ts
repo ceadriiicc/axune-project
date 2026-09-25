@@ -80,7 +80,26 @@ export function reduceRun(run: LiveRun, event: AgentEvent, at: number = Date.now
     case 'run_started':
       // `at`, not `Date.now()`: a replayed run_started must not restart the
       // clock at the moment of replay.
-      return { ...run, prompt: event.prompt || run.prompt, status: 'working', startedAt: at };
+      //
+      // Text and activity are cleared, which matters only on a full replay.
+      // `message_delta` appends, so replaying a run from its beginning onto a
+      // copy that already holds part of the reply concatenates the two - the
+      // reply comes back reading "The answer is parThe answer is partly yes."
+      // Seeing run_started at all means the run is being told from the start,
+      // so whatever was accumulated before it is about to be re-sent.
+      //
+      // A live run is unaffected: it is created empty and run_started arrives
+      // once. A partial reconnect is unaffected: run_started has already been
+      // seen, so it is not in the replayed slice.
+      return {
+        ...run,
+        prompt: event.prompt || run.prompt,
+        status: 'working',
+        startedAt: at,
+        text: '',
+        activity: [],
+        error: null,
+      };
     case 'message_delta':
       return { ...run, text: run.text + event.text };
     case 'tool_started':

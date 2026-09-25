@@ -8,7 +8,9 @@
  * typecheck and fail in the user's hands. Exercises the decisions in
  * `threadShrink`, which is why that logic is separate from the file access.
  */
+import { reduceRun } from '../lib/runReducer';
 import { revive, shrink } from '../lib/threadShrink';
+import type { AgentEvent } from '@axune/protocol';
 import type { LiveRun, Thread } from '../lib/WorkspaceContext';
 
 let failures = 0;
@@ -74,6 +76,81 @@ check('a run still working is restored as stopped, never as working', () => {
   const restored = stored.conversation[0]!;
   if (restored.status === 'working') return 'FAIL: comes back claiming to be working';
   return `restored as "${restored.status}" — ${restored.outcome}`;
+});
+
+check('an interrupted run is remembered so its result can be recovered', () => {
+  // The whole point. `trimRun` rewrites a working run to stopped, and that
+  // rewrite used to be the only trace that it had ever been running - so a run
+  // the desktop went on to finish was unrecoverable, with the result sitting
+  // one question away.
+  const stored = shrink(
+    workspace({ conversation: [run({ runId: 'run-live', status: 'working', outcome: null })] }),
+  );
+  if (stored.interruptedRunId !== 'run-live') {
+    return `FAIL: remembered ${stored.interruptedRunId}`;
+  }
+  // Both must be true at once: honest about the status, and still able to ask.
+  if (stored.conversation[0]!.status === 'working') {
+    return 'FAIL: restored as working, which it certainly is not';
+  }
+  return 'stored as stopped, and the run id kept so the desktop can be asked';
+});
+
+check('nothing in flight means nothing to ask about', () => {
+  // A stale id would make every launch replay a finished run from its start.
+  const stored = shrink(workspace({ conversation: [run({ status: 'finished' })] }));
+  if (stored.interruptedRunId !== null) return `FAIL: invented ${stored.interruptedRunId}`;
+  return 'null, so the resume asks for nothing';
+});
+
+check('the interrupted run survives the round trip', () => {
+  const stored = shrink(
+    workspace({ conversation: [run({ runId: 'run-live', status: 'working', outcome: null })] }),
+  );
+  const back = revive(JSON.parse(JSON.stringify(stored)));
+  if (back?.interruptedRunId !== 'run-live') return `FAIL: became ${back?.interruptedRunId}`;
+  return 'run-live, through serialisation and back';
+});
+
+check('a file written before this existed still loads', () => {
+  // Every phone upgrading to this build has one. Absent is not corrupt - it
+  // means that launch had nothing in flight.
+  const stored = shrink(workspace()) as unknown as Record<string, unknown>;
+  delete stored['interruptedRunId'];
+  const back = revive(JSON.parse(JSON.stringify(stored)));
+  if (!back) return 'FAIL: an older file was rejected outright';
+  if (back.interruptedRunId !== null) return `FAIL: ${back.interruptedRunId}`;
+  return 'loads, with nothing to ask about';
+});
+
+check('recovering a run replays its reply once, not twice', () => {
+  // The end of the story the three checks above begin, and the place it went
+  // wrong first time. The phone asks the desktop for the whole run, because
+  // sequence numbers live in memory and did not survive the restart - so every
+  // `message_delta` arrives again, and `message_delta` appends. Without
+  // `run_started` clearing what was accumulated, the reply comes back as
+  // "The answer is parThe answer is partly yes."
+  const ev = (e: Record<string, unknown>, seq: number) =>
+    ({ runId: 'r1', sessionId: 's1', agentId: 'claude-code', seq, ts: 1000 + seq, ...e }) as AgentEvent;
+
+  let recovered: LiveRun = run({
+    runId: 'r1',
+    text: 'The answer is par',
+    status: 'stopped',
+    outcome: 'interrupted when the app closed',
+  });
+
+  const replay = [
+    ev({ type: 'run_started', prompt: 'explain this', mode: 'independent', branch: 'main', worktreePath: null }, 0),
+    ev({ type: 'message_delta', text: 'The answer is par' }, 1),
+    ev({ type: 'message_delta', text: 'tly yes.' }, 2),
+    ev({ type: 'run_finished', outcome: 'completed' }, 3),
+  ];
+  for (const event of replay) recovered = reduceRun(recovered, event, event.ts!);
+
+  if (recovered.text !== 'The answer is partly yes.') return `FAIL: "${recovered.text}"`;
+  if (recovered.status !== 'finished') return `FAIL: came back ${recovered.status}`;
+  return 'the run finished, and its reply is not doubled';
 });
 
 check('a long reply is capped and says so', () => {

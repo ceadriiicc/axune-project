@@ -494,10 +494,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [stored, seenAt] = await Promise.all([loadPairing(), loadLastSeenAt()]);
+      // The workspace is read here as well as in the restore effect, on
+      // purpose. The run to ask about has to be set before the socket opens,
+      // and those two effects have no ordering between them - so depending on
+      // the other one having finished would work most of the time, which is the
+      // worst way for this to behave. One extra decrypt at launch buys
+      // determinism.
+      const [stored, seenAt, saved] = await Promise.all([
+        loadPairing(),
+        loadLastSeenAt(),
+        loadWorkspace(),
+      ]);
       if (cancelled || !stored) return;
       const client = ensureClient();
       client.setLastSeenAt(seenAt);
+      // A run that was still going when the app closed. The desktop carried on
+      // and holds the result; this is what makes the phone ask for it.
+      client.setPendingRunId(saved?.interruptedRunId ?? null);
       // Prefer the stored candidate list; a pairing from an earlier version has
       // only the single address it happened to work on.
       client.reconnectWithSession(

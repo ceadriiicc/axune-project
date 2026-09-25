@@ -50,8 +50,29 @@ export interface PersistedWorkspace {
   history: RunSummary[];
   /** Which project these belong to, so restored threads are never mislabelled. */
   projectName: string | null;
+  /**
+   * The run that was still working when this was written, if any.
+   *
+   * Without it a run interrupted by a force-quit is lost for good. `trimRun`
+   * rewrites its status to `stopped` - correctly, since it is certainly not
+   * working now - and that rewrite is the only record that it ever was. The
+   * desktop kept going and holds the result; nothing on the phone knew to ask.
+   *
+   * So the id is captured before the rewrite happens, and the client resumes
+   * with it rather than with `none`. At most one run is ever working at a time,
+   * which is why this is a single id rather than a list.
+   */
+  interruptedRunId: string | null;
   savedAt: number;
 }
+
+/**
+ * What a caller supplies. `interruptedRunId` is derived here rather than passed
+ * in, because it is a fact about the conversation being saved and not a
+ * separate decision - asking every call site to work it out is how two of them
+ * end up disagreeing.
+ */
+export type WorkspaceToSave = Omit<PersistedWorkspace, 'savedAt' | 'interruptedRunId'>;
 
 /**
  * Reduce a whole workspace to the version that goes on disk.
@@ -59,7 +80,11 @@ export interface PersistedWorkspace {
  * Order matters: newest threads survive and oldest are dropped, because the
  * conversation set aside an hour ago is the one someone comes back for.
  */
-export function shrink(state: Omit<PersistedWorkspace, 'savedAt'>): PersistedWorkspace {
+export function shrink(state: WorkspaceToSave): PersistedWorkspace {
+  // Captured before `trimRun` rewrites the status, which is the moment the
+  // information stops existing.
+  const interrupted = state.conversation.find((run) => run.status === 'working') ?? null;
+
   const payload: PersistedWorkspace = {
     // The open conversation is what the user is looking at, so it is kept at
     // full size and never traded away for room to store archives.
@@ -68,6 +93,7 @@ export function shrink(state: Omit<PersistedWorkspace, 'savedAt'>): PersistedWor
     threads: [],
     history: state.history.slice(0, MAX_HISTORY),
     projectName: state.projectName,
+    interruptedRunId: interrupted?.runId ?? null,
     savedAt: Date.now(),
   };
 
@@ -108,6 +134,9 @@ export function revive(parsed: unknown): PersistedWorkspace | null {
     })),
     history: Array.isArray(raw.history) ? raw.history.filter(isSummary) : [],
     projectName: typeof raw.projectName === 'string' ? raw.projectName : null,
+    // Absent in files written before this existed, which is not an error - it
+    // means that launch had nothing in flight worth asking about.
+    interruptedRunId: typeof raw.interruptedRunId === 'string' ? raw.interruptedRunId : null,
     savedAt: typeof raw.savedAt === 'number' ? raw.savedAt : 0,
   };
 }

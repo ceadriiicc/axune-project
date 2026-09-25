@@ -2,7 +2,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 
 import { phoneRandom } from './random';
-import { type PersistedWorkspace, revive, shrink } from './threadShrink';
+import { type PersistedWorkspace, revive, shrink, type WorkspaceToSave } from './threadShrink';
 import { decodeKey, encodeKey, newVaultKey, open, seal } from './threadVault';
 
 /**
@@ -109,7 +109,7 @@ export async function loadWorkspace(): Promise<PersistedWorkspace | null> {
 }
 
 export async function saveWorkspace(
-  state: Omit<PersistedWorkspace, 'savedAt'>,
+  state: WorkspaceToSave,
 ): Promise<void> {
   try {
     const key = await vaultKey();
