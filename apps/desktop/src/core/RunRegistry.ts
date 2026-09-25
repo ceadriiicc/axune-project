@@ -48,8 +48,16 @@ export class RunRegistry {
     const events = record.events.filter((e) => e.seq > lastSeq);
     // A gap exists when the oldest event we still hold is newer than the next
     // one the phone expects — the missing events were trimmed.
+    //
+    // The `lastSeq >= 0` guard that used to be here suppressed this in exactly
+    // the case that needs it most. A phone recovering a run after a restart has
+    // no sequence numbers - they lived in memory - so it asks from -1, meaning
+    // "send me everything". If the run was long enough to have been trimmed,
+    // everything is not available, and the guard made that unsayable. The
+    // arithmetic already handles -1 correctly: oldestHeld > 0 is precisely the
+    // question of whether anything was dropped from the front.
     const oldestHeld = record.events[0]?.seq ?? 0;
-    const gap = lastSeq >= 0 && oldestHeld > lastSeq + 1;
+    const gap = oldestHeld > lastSeq + 1;
 
     return { events, gap, finished: record.finished };
   }

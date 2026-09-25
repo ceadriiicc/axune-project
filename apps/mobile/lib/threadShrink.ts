@@ -126,11 +126,11 @@ export function revive(parsed: unknown): PersistedWorkspace | null {
   const raw = parsed as Partial<PersistedWorkspace> | null;
   if (!raw || !Array.isArray(raw.threads) || !Array.isArray(raw.conversation)) return null;
   return {
-    conversation: raw.conversation.filter(isRun),
+    conversation: raw.conversation.filter(isRun).map(reviveRun),
     conversationId: typeof raw.conversationId === 'string' ? raw.conversationId : null,
     threads: raw.threads.filter(isThread).map((thread) => ({
       ...thread,
-      runs: thread.runs.filter(isRun),
+      runs: thread.runs.filter(isRun).map(reviveRun),
     })),
     history: Array.isArray(raw.history) ? raw.history.filter(isSummary) : [],
     projectName: typeof raw.projectName === 'string' ? raw.projectName : null,
@@ -161,6 +161,10 @@ function trimRun(run: LiveRun, textLimit: number): LiveRun {
     // Defaulted for the same reason as error: a thread from a build before
     // usage existed must not come back as a shape the app does not expect.
     usage: run.usage ?? null,
+    // Persisted rather than recomputed: the desktop's registry may well have
+    // forgotten the run entirely by the next launch, so if this is not carried
+    // across, a reply missing its middle quietly becomes a complete-looking one.
+    incomplete: run.incomplete ?? false,
     changes: run.changes
       ? { ...run.changes, patch: cap(run.changes.patch, MAX_PATCH, 'diff') }
       : null,
@@ -177,6 +181,31 @@ function cap(value: string, limit: number, what: string): string {
   return `${value.slice(0, limit)}
 
 … ${what} truncated to fit on the device`;
+}
+
+/**
+ * Fill in fields a file written by an older build does not have.
+ *
+ * `trimRun` defaults these on the way *out*, with a comment saying a restored
+ * run must not be a shape the rest of the app does not expect - but a file
+ * written before a field existed has never been through `trimRun` with that
+ * field in it. So the defaulting has to happen on the way *in* as well, and
+ * this is the only place that sees every restored run.
+ *
+ * Found when `incomplete` arrived and came back `undefined`; `error` and
+ * `usage` had the same hole and were merely harmless about it, because a
+ * falsy check happened to do the right thing for both.
+ */
+function reviveRun(run: LiveRun): LiveRun {
+  return {
+    ...run,
+    error: run.error ?? null,
+    usage: run.usage ?? null,
+    changes: run.changes ?? null,
+    decision: run.decision ?? null,
+    activity: Array.isArray(run.activity) ? run.activity : [],
+    incomplete: run.incomplete ?? false,
+  };
 }
 
 function isRun(value: unknown): value is LiveRun {

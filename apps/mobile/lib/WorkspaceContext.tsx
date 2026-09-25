@@ -133,6 +133,7 @@ const emptyRun = (runId: string, prompt: string, agentId: AgentId = 'claude-code
   changes: null,
   usage: null,
   decision: null,
+  incomplete: false,
 });
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
@@ -317,7 +318,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setConversation((current) =>
           current.map((run) => (run.runId === runId ? { ...run, changes: result } : run)),
         ),
-      onGap: (_runId, missed) => setConnectionDetail(`caught up — replayed ${missed} events`),
+      onCaughtUp: (_runId, replayed) => setConnectionDetail(`caught up — replayed ${replayed} events`),
+      onReplayGap: (runId) =>
+        setConversation((current) =>
+          current.map((run) => (run.runId === runId ? { ...run, incomplete: true } : run)),
+        ),
     }, phoneRandom);
     return clientRef.current;
   }, [applyEvent]);

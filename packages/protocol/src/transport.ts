@@ -182,7 +182,17 @@ export type ServerMessage =
   /** A replayed or live agent event. Replays carry `replayed: true`. */
   | { type: 'event'; event: AgentEvent; replayed?: boolean }
   /** Sent after a resume, before any replayed events, so the phone can show a gap honestly. */
-  | { type: 'resumed'; runId: string; fromSeq: number; missedEvents: number }
+  /**
+   * `missedEvents` is how many events are about to be replayed - a catch-up
+   * figure, not a loss. `gap` is the loss: true when the desktop no longer
+   * holds part of this run and the replay will be incomplete.
+   *
+   * The registry computed `gap` from the day it was written, with a comment
+   * saying a replay should admit it rather than pretend the run started later
+   * than it did. Nothing carried it, so the phone rendered a run missing its
+   * middle as a complete one.
+   */
+  | { type: 'resumed'; runId: string; fromSeq: number; missedEvents: number; gap: boolean }
   | { type: 'project_changed'; project: ProjectSummary }
   | { type: 'machine_changed'; machine: MachineSummary; capability: Capability }
   | { type: 'agents_changed'; agents: AgentStatus[] }

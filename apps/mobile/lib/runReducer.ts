@@ -53,6 +53,19 @@ export interface LiveRun {
   usage: RunUsage | null;
   /** Set once the user has kept or discarded the branch. */
   decision: 'keep' | 'discard' | null;
+  /**
+   * Part of this run is permanently missing from what the phone holds.
+   *
+   * Set when the desktop says its replay could not go back far enough - a long
+   * run whose earliest events were trimmed out of the registry before this
+   * phone asked for them. It is not a failure and not a truncation for storage:
+   * the run ran fine, and what is shown is genuinely incomplete.
+   *
+   * Carried on the run rather than shown as a banner, because a banner is gone
+   * by the time anyone scrolls back to read the reply - and a reply missing its
+   * middle with nothing saying so is indistinguishable from a complete one.
+   */
+  incomplete: boolean;
 }
 
 export interface ActivityLine {

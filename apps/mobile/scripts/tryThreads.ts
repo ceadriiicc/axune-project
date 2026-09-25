@@ -42,6 +42,7 @@ const run = (over: Partial<LiveRun> = {}): LiveRun => ({
   changes: null,
   usage: null,
   decision: null,
+  incomplete: false,
   ...over,
 });
 
@@ -151,6 +152,28 @@ check('recovering a run replays its reply once, not twice', () => {
   if (recovered.text !== 'The answer is partly yes.') return `FAIL: "${recovered.text}"`;
   if (recovered.status !== 'finished') return `FAIL: came back ${recovered.status}`;
   return 'the run finished, and its reply is not doubled';
+});
+
+check('a reply known to be incomplete is never restored as whole', () => {
+  // The desktop's registry is in memory and bounded. By the next launch it may
+  // have forgotten this run entirely, so there is no second chance to learn
+  // that part of it is missing - if the mark is not carried across, a reply
+  // missing its beginning quietly becomes a complete-looking one.
+  const stored = shrink(workspace({ conversation: [run({ incomplete: true })] }));
+  const back = revive(JSON.parse(JSON.stringify(stored)));
+  if (back?.conversation[0]?.incomplete !== true) return 'FAIL: came back looking whole';
+  return 'still marked incomplete after a round trip';
+});
+
+check('a run from a build before this field loads as whole, not as broken', () => {
+  const stored = shrink(workspace()) as unknown as Record<string, unknown>;
+  (stored['conversation'] as Record<string, unknown>[])[0]!['incomplete'] = undefined;
+  const back = revive(JSON.parse(JSON.stringify(stored)));
+  if (!back) return 'FAIL: rejected an older file';
+  if (back.conversation[0]?.incomplete !== false) {
+    return `FAIL: ${back.conversation[0]?.incomplete}`;
+  }
+  return 'defaults to false rather than undefined';
 });
 
 check('a long reply is capped and says so', () => {

@@ -388,6 +388,22 @@ function AgentPanel({
       */}
       {run.error ? <Text style={styles.failure}>{run.error}</Text> : null}
 
+      {/*
+        Above the reply, not below it, because it changes how the text beneath
+        should be read. The desktop keeps a bounded number of events per run, so
+        a long run reconnected to late can only be replayed in part - and a
+        reply missing its beginning is indistinguishable from a whole one unless
+        something says so.
+      */}
+      {run.incomplete ? (
+        <View style={styles.incompleteRow}>
+          <Ionicons name="cut-outline" size={12} color={color.textSoft} />
+          <Text style={styles.incompleteText}>
+            The start of this reply was no longer on your desktop when this phone reconnected
+          </Text>
+        </View>
+      ) : null}
+
       {run.text ? (
         <View style={[styles.answer, { backgroundColor: agent.bubbleBg }]}>
           <AgentText text={run.text} style={{ color: agent.bubbleText }} />
@@ -565,6 +581,8 @@ function useStyles() {
     refusalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
     refusalText: { color: color.textMuted, fontSize: 12, lineHeight: 16, flex: 1 },
     thinking: { color: color.textSoft, fontSize: 13, fontStyle: 'italic' },
+    incompleteRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    incompleteText: { color: color.textSoft, fontSize: 11, flex: 1, fontStyle: 'italic' },
     answer: { borderRadius: radius.sm, padding: spacing.sm },
     stop: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
     stopText: { color: color.danger, fontSize: 12, fontWeight: '600' },

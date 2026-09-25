@@ -17,6 +17,7 @@
     "try:gemini": "tsx src/tryGemini.ts",
     "try:lifecycle": "tsx src/tryLifecycle.ts",
     "try:relay": "tsx src/tryRelayLink.ts",
+    "try:replay": "tsx src/tryReplay.ts",
     "try:surface": "tsx src/trySurface.ts",
     "try:policy": "tsx src/tryPolicy.ts",
     "try:usage": "tsx src/tryUsage.ts"

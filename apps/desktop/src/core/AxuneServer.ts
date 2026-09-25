@@ -380,6 +380,7 @@ export class AxuneServer {
         runId: message.runId,
         fromSeq: message.lastSeq,
         missedEvents: slice.events.length,
+        gap: slice.gap,
       });
       for (const event of slice.events) {
         this.send(socket, { type: 'event', event, replayed: true });

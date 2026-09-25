@@ -40,7 +40,17 @@ export interface ClientCallbacks {
   onState: (state: ConnectionState, detail?: string) => void;
   onEvent: (event: AgentEvent, replayed: boolean) => void;
   onPaired: (project: ProjectSummary, agents: AgentStatus[]) => void;
-  onGap?: (runId: string, missedEvents: number) => void;
+  /**
+   * A reconnect replayed events this phone had not seen. A catch-up, not a
+   * loss - it was called `onGap` while carrying exactly the opposite figure.
+   */
+  onCaughtUp?: (runId: string, replayed: number) => void;
+  /**
+   * The desktop no longer holds part of this run, so the replay is incomplete
+   * and always will be. The run is marked rather than a banner shown: a banner
+   * is gone by the time anyone scrolls back to the reply.
+   */
+  onReplayGap?: (runId: string) => void;
   onProject?: (project: ProjectSummary) => void;
   onAgents?: (agents: AgentStatus[]) => void;
   /** Today's totals, as counted by the desktop - which sees runs this phone did not. */
@@ -533,8 +543,11 @@ export class AxuneClient {
         // would ask a question the desktop is not yet listening for.
         this.startHeartbeat();
         if (message.missedEvents > 0) {
-          this.callbacks.onGap?.(message.runId, message.missedEvents);
+          this.callbacks.onCaughtUp?.(message.runId, message.missedEvents);
         }
+        // Sent before the replayed events, so the mark is in place by the time
+        // the partial reply arrives rather than racing it.
+        if (message.gap) this.callbacks.onReplayGap?.(message.runId);
         return;
 
       case 'project_changed':

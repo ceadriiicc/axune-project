@@ -56,6 +56,7 @@ const base = (): LiveRun => ({
   changes: null,
   usage: null,
   decision: null,
+  incomplete: false,
 });
 
 const event = (body: Record<string, unknown>, seq: number) =>
